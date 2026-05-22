@@ -74,6 +74,27 @@ type AttRow = {
   onTime: boolean;
 };
 
+function normalizeAttendanceRows(raw: unknown): AttRow[] {
+  if (!raw || typeof raw !== "object" || !("items" in raw)) return [];
+  const items = (raw as { items?: unknown }).items;
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((row, index) => {
+      if (!row || typeof row !== "object") return null;
+      const r = row as Record<string, unknown>;
+      return {
+        id: String(r.id ?? `row-${index}`),
+        fullName: String(r.fullName ?? r.full_name ?? "").trim() || "—",
+        employeeCode: String(r.employeeCode ?? r.employee_code ?? "").trim() || "—",
+        eventType: String(r.eventType ?? r.event_type ?? "").trim() || "UNKNOWN",
+        occurredAt: String(r.occurredAt ?? r.occurred_at ?? "").trim(),
+        workdayDate: String(r.workdayDate ?? r.workday_date ?? "").trim(),
+        onTime: r.onTime === true || r.onTime === 1 || r.on_time === 1
+      };
+    })
+    .filter((row): row is AttRow => row != null);
+}
+
 type ActRow = {
   id: string;
   eventType: string;
@@ -118,12 +139,12 @@ export default function DashboardPage() {
     try {
       const [s, a, act] = await Promise.all([
         apiFetch<Summary>("/admin/dashboard/summary", { token }),
-        apiFetch<{ items: AttRow[] }>("/admin/attendance/recent?limit=30", { token }),
+        apiFetch<unknown>("/admin/attendance/recent?limit=30", { token }),
         apiFetch<{ items: ActRow[] }>("/admin/activity/recent?limit=12", { token })
       ]);
       setSummary(s);
       setStatsReplayKey((k) => k + 1);
-      setAttendance(a.items || []);
+      setAttendance(normalizeAttendanceRows(a));
       setActivity(act.items || []);
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : t("errorLoad"));

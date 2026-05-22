@@ -17,6 +17,26 @@ type AttRow = {
   onTime: boolean;
 };
 
+function normalizeAttendanceRows(raw: unknown): AttRow[] {
+  if (!raw || typeof raw !== "object" || !("items" in raw)) return [];
+  const items = (raw as { items?: unknown }).items;
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((row, index) => {
+      if (!row || typeof row !== "object") return null;
+      const r = row as Record<string, unknown>;
+      const id = String(r.id ?? `row-${index}`);
+      const fullName = String(r.fullName ?? r.full_name ?? "").trim() || "—";
+      const employeeCode = String(r.employeeCode ?? r.employee_code ?? "").trim() || "—";
+      const eventType = String(r.eventType ?? r.event_type ?? "").trim() || "UNKNOWN";
+      const occurredAt = String(r.occurredAt ?? r.occurred_at ?? "").trim();
+      const workdayDate = String(r.workdayDate ?? r.workday_date ?? "").trim();
+      const onTime = r.onTime === true || r.onTime === 1 || r.on_time === 1;
+      return { id, fullName, employeeCode, eventType, occurredAt, workdayDate, onTime };
+    })
+    .filter((row): row is AttRow => row != null);
+}
+
 function buildAttendanceQuery(fromDate: string, toDate: string, lateOnly: boolean): string {
   const qs = new URLSearchParams();
   qs.set("limit", "120");
@@ -47,8 +67,8 @@ export default function AttendancePage() {
       setErr(null);
       try {
         const query = buildAttendanceQuery(from, to, late);
-        const data = await apiFetch<{ items: AttRow[] }>(`/admin/attendance/recent${query}`, { token });
-        setItems(data.items || []);
+        const data = await apiFetch<unknown>(`/admin/attendance/recent${query}`, { token });
+        setItems(normalizeAttendanceRows(data));
       } catch (e) {
         setErr(e instanceof ApiError ? e.message : t("errorLoad"));
       }

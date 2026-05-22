@@ -7,10 +7,16 @@ type ReportingFmtOpts = {
 };
 
 /** Format an ISO / DB datetime for admins in Dominican local time (not the viewer's browser zone). */
-export function formatReportingDateTime(iso: string, locale: string, opts?: ReportingFmtOpts): string {
+export function formatReportingDateTime(
+  iso: string | null | undefined,
+  locale: string,
+  opts?: ReportingFmtOpts
+): string {
+  const raw = iso == null ? "" : typeof iso === "string" ? iso : String(iso);
+  if (!raw.trim()) return "—";
   try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
     const loc = locale === "es" ? "es-DO" : "en-US";
     return d.toLocaleString(loc, {
       timeZone: REPORTING_TIME_ZONE,
@@ -22,6 +28,6 @@ export function formatReportingDateTime(iso: string, locale: string, opts?: Repo
       ...(opts?.includeSeconds ? { second: "2-digit" as const } : {})
     });
   } catch {
-    return iso;
+    return raw;
   }
 }
