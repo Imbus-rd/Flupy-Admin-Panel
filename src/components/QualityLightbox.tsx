@@ -43,6 +43,7 @@ export type LightboxPhoto = {
   photoUrl: string;
   photoType?: string;
   employeeCode?: string | null;
+  customerMobile?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   capturedAt?: string | null;
@@ -295,10 +296,14 @@ export function QualityLightbox({
       </div>
 
       <div className="border-b border-white/[0.06] bg-black/25 px-4 py-2">
-        <div className="grid grid-cols-1 gap-1 text-[11px] text-slate-400 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-1 text-[11px] text-slate-400 sm:grid-cols-2 lg:grid-cols-4">
           <p>
             <span className="text-slate-500">{t("filterEmployeeCode")}: </span>
             <span className="font-mono text-slate-300">{photo.employeeCode || "N/A"}</span>
+          </p>
+          <p>
+            <span className="text-slate-500">{t("customerMobile")}: </span>
+            <span className="font-mono text-slate-300">{photo.customerMobile || "N/A"}</span>
           </p>
           <p>
             <span className="text-slate-500">{t("coords")}: </span>

@@ -11,6 +11,7 @@ type Emp = {
   employeeCode: string;
   fullName: string;
   role: string;
+  active: boolean;
   region?: string | null;
 };
 
@@ -24,6 +25,7 @@ type EmpDetail = {
   employeeType: string;
   supervisorId: string | null;
   isSupervisor: boolean;
+  active: boolean;
   region: string | null;
 };
 
@@ -62,6 +64,7 @@ export default function EmployeesPage() {
     geofenceKey: "",
     supervisorId: "",
     isSupervisor: false,
+    active: true,
     password: "",
     region: ""
   });
@@ -78,9 +81,9 @@ export default function EmployeesPage() {
     try {
       const qs = new URLSearchParams();
       if (searchApplied.trim()) qs.set("search", searchApplied.trim());
-      const q = qs.toString();
-      const data = await apiFetch<{ items: Emp[] }>(`/employees${q ? `?${q}` : ""}`, { token });
-      setItems(data.items || []);
+      qs.set("includeInactive", "true");
+      const data = await apiFetch<{ items: Emp[] }>(`/employees?${qs.toString()}`, { token });
+      setItems((data.items || []).map((e) => ({ ...e, active: e.active !== false })));
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : t("errorLoad"));
     }
@@ -117,6 +120,7 @@ export default function EmployeesPage() {
           geofenceKey: empData.geofenceKey || "",
           supervisorId: empData.supervisorId || "",
           isSupervisor: empData.isSupervisor,
+          active: empData.active !== false,
           password: "",
           region: normalizeEmployeeRegionFormValue(empData.region)
         });
@@ -150,7 +154,8 @@ export default function EmployeesPage() {
         role: form.role,
         employeeType: form.employeeType,
         geofenceKey: form.geofenceKey.trim() || null,
-        isSupervisor: form.isSupervisor
+        isSupervisor: form.isSupervisor,
+        active: form.active
       };
       body.region = form.region.trim() ? form.region.trim() : null;
       if (form.role === "EMPLOYEE") {
@@ -176,7 +181,7 @@ export default function EmployeesPage() {
     } finally {
       setSaving(false);
     }
-  }, [token, editId, form, t, load, closeEdit, scopedRegion]);
+  }, [token, editId, form, t, load, closeEdit]);
 
   const inputClass =
     "mt-1 w-full rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2 text-sm text-white outline-none focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20";
@@ -237,13 +242,14 @@ export default function EmployeesPage() {
               <th className="px-4 py-3 font-medium">{t("name")}</th>
               <th className="px-4 py-3 font-medium">{t("employeesRegion")}</th>
               <th className="px-4 py-3 font-medium">{t("role")}</th>
+              <th className="px-4 py-3 font-medium">{t("status")}</th>
               <th className="px-4 py-3 font-medium text-right">{t("actions")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5 text-slate-300">
             {items.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
                   {t("noData")}
                 </td>
               </tr>
@@ -256,6 +262,15 @@ export default function EmployeesPage() {
                   {e.region || "—"}
                 </td>
                 <td className="px-4 py-3 text-slate-400">{roleLabel(t, e.role)}</td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      e.active ? "bg-teal-500/15 text-teal-200" : "bg-rose-500/15 text-rose-200"
+                    }`}
+                  >
+                    {e.active ? t("employeeStatusActive") : t("employeeStatusInactive")}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-right">
                   <button
                     type="button"
@@ -396,6 +411,18 @@ export default function EmployeesPage() {
                     />
                     {t("isSupervisorFlag")}
                   </label>
+                  <div>
+                    <label className="text-xs font-medium text-slate-400">{t("employeeStatusLabel")}</label>
+                    <select
+                      className={inputClass}
+                      value={form.active ? "ACTIVE" : "INACTIVE"}
+                      onChange={(e) => setForm((f) => ({ ...f, active: e.target.value === "ACTIVE" }))}
+                    >
+                      <option value="ACTIVE">{t("employeeStatusActive")}</option>
+                      <option value="INACTIVE">{t("employeeStatusInactive")}</option>
+                    </select>
+                    <p className="mt-1 text-[11px] text-slate-500">{t("employeeStatusHint")}</p>
+                  </div>
                   <div>
                     <label className="text-xs font-medium text-slate-400">{t("passwordNewOptional")}</label>
                     <input

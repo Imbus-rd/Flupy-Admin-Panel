@@ -172,6 +172,7 @@ export default function QualityPage() {
         const detail = await apiFetch<{
           id: string;
           orderId?: string;
+          customerMobile?: string | null;
           photos: {
             id: string;
             photoUrl: string;
@@ -191,6 +192,7 @@ export default function QualityPage() {
           photoUrl: p.photoUrl,
           photoType: p.photoType,
           employeeCode: p.employeeCode ?? q.technicianCode,
+          customerMobile: detail.customerMobile ?? null,
           latitude: p.latitude ?? null,
           longitude: p.longitude ?? null,
           capturedAt: p.capturedAt ?? null,
