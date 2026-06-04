@@ -125,6 +125,7 @@ function ServicesDashboardContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncingStripe, setSyncingStripe] = useState(false);
+  const [stripeSyncMessage, setStripeSyncMessage] = useState<string | null>(null);
 
   const [serviceForm, setServiceForm] = useState({
     name: "",
@@ -252,12 +253,16 @@ function ServicesDashboardContent() {
     if (!token) return;
     setSyncingStripe(true);
     setError(null);
+    setStripeSyncMessage(null);
     try {
-      await servicesFetch("/api/admin/plans/sync-stripe", {
+      const result = await servicesFetch<{ synced_count: number; skipped_count: number }>("/api/admin/plans/sync-stripe", {
         token,
         method: "POST",
         body: JSON.stringify({}),
       });
+      setStripeSyncMessage(
+        `Stripe sincronizado: ${result.synced_count} planes importados, ${result.skipped_count} productos omitidos por no pertenecer a Flupy Services.`
+      );
       await loadAll();
     } catch (err) {
       setError(err instanceof ServicesApiError ? err.message : "No se pudo sincronizar Stripe");
@@ -371,9 +376,14 @@ function ServicesDashboardContent() {
                   <div>
                     <h2 className="text-base font-semibold text-white">Planes y Stripe</h2>
                     <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                      Stripe es la fuente del precio real. Sincroniza para importar productos/precios activos; usa el formulario solo para registrar un plan manual temporal.
+                      Stripe es la fuente del precio real. Solo se importan productos/precios con metadata flupy_catalog=services.
                     </p>
                   </div>
+                  {stripeSyncMessage && (
+                    <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs leading-relaxed text-emerald-100">
+                      {stripeSyncMessage}
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={syncStripePlans}
