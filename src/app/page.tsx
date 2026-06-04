@@ -84,13 +84,12 @@ export default function PortalPage() {
             <article className="ui-card-soft rounded-2xl p-4 sm:p-5">
               <h3 className="text-base font-semibold text-white">{t("flupyAppTitle")}</h3>
               <p className="mt-2 text-sm text-slate-500">{t("flupyAppDesc")}</p>
-              <button
-                type="button"
-                disabled
-                className="mt-4 w-full cursor-not-allowed rounded-xl border border-white/[0.06] bg-white/[0.02] py-3 text-sm font-semibold text-slate-600"
+              <Link
+                href="/services/login"
+                className="mt-4 flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-teal-500/25 transition hover:from-teal-400 hover:to-emerald-400"
               >
                 {t("enterAsAdmin")}
-              </button>
+              </Link>
             </article>
 
             <article className="relative overflow-hidden rounded-2xl border border-teal-400/25 bg-gradient-to-br from-teal-500/15 via-white/[0.03] to-transparent p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] sm:p-5">
