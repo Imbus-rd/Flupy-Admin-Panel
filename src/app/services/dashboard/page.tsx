@@ -36,6 +36,10 @@ type Plan = {
   billing_interval: string;
   service_limit: number | null;
   stripe_price_id: string | null;
+  stripe_product_id?: string | null;
+  stripe_lookup_key?: string | null;
+  stripe_active?: number;
+  synced_from_stripe_at?: string | null;
   is_active: number;
   sort_order: number;
 };
@@ -120,6 +124,7 @@ function ServicesDashboardContent() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncingStripe, setSyncingStripe] = useState(false);
 
   const [serviceForm, setServiceForm] = useState({
     name: "",
@@ -243,6 +248,24 @@ function ServicesDashboardContent() {
     }
   }
 
+  async function syncStripePlans() {
+    if (!token) return;
+    setSyncingStripe(true);
+    setError(null);
+    try {
+      await servicesFetch("/api/admin/plans/sync-stripe", {
+        token,
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof ServicesApiError ? err.message : "No se pudo sincronizar Stripe");
+    } finally {
+      setSyncingStripe(false);
+    }
+  }
+
   return (
     <ServicesShell>
       <div className="space-y-5">
@@ -345,7 +368,23 @@ function ServicesDashboardContent() {
             {activeTab === "plans" && (
               <section className="grid gap-5 xl:grid-cols-[26rem_1fr]">
                 <form onSubmit={createPlan} className="ui-card h-fit space-y-3 rounded-2xl p-5">
-                  <h2 className="text-base font-semibold text-white">Crear plan</h2>
+                  <div>
+                    <h2 className="text-base font-semibold text-white">Planes y Stripe</h2>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                      Stripe es la fuente del precio real. Sincroniza para importar productos/precios activos; usa el formulario solo para registrar un plan manual temporal.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={syncStripePlans}
+                    disabled={syncingStripe}
+                    className="w-full rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-teal-500/20 transition disabled:opacity-60"
+                  >
+                    {syncingStripe ? "Sincronizando..." : "Sincronizar desde Stripe"}
+                  </button>
+                  <div className="border-t border-white/[0.07] pt-3">
+                    <h3 className="text-sm font-semibold text-slate-300">Plan manual temporal</h3>
+                  </div>
                   <Field label="Nombre" value={planForm.name} onChange={(v) => setPlanForm({ ...planForm, name: v })} />
                   <Field label="Slug" value={planForm.slug} onChange={(v) => setPlanForm({ ...planForm, slug: v })} placeholder="premium" />
                   <Field label="Descripcion" value={planForm.description} onChange={(v) => setPlanForm({ ...planForm, description: v })} />
@@ -363,12 +402,13 @@ function ServicesDashboardContent() {
                   </button>
                 </form>
                 <DataTable
-                  columns={["Nombre", "Slug", "Precio", "Limite", "Activo"]}
+                  columns={["Nombre", "Slug", "Precio", "Limite", "Stripe", "Activo"]}
                   rows={plans.map((p) => [
                     p.name,
                     p.slug,
                     `${p.price_amount} ${p.currency}`,
                     p.service_limit ?? "Ilimitado",
+                    p.stripe_price_id ? "Vinculado" : "Sin Stripe",
                     p.is_active ? "Si" : "No",
                   ])}
                 />
