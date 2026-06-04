@@ -42,6 +42,13 @@ type Plan = {
   synced_from_stripe_at?: string | null;
   is_active: number;
   sort_order: number;
+  prices?: Array<{
+    billing_interval: string;
+    price_amount: string | number;
+    currency: string;
+    stripe_price_id: string;
+    stripe_active: number;
+  }>;
 };
 
 type Provider = {
@@ -82,6 +89,31 @@ const tabs = [
 function numberValue(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function planPricesLabel(plan: Plan) {
+  if (plan.prices?.length) {
+    return (
+      <div className="space-y-1">
+        {plan.prices.map((price) => (
+          <div key={price.stripe_price_id}>
+            <span className="font-medium text-slate-200">
+              {price.billing_interval === "year" ? "Anual" : "Mensual"}:
+            </span>{" "}
+            {price.price_amount} {price.currency}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return `${plan.price_amount} ${plan.currency}`;
+}
+
+function planStripeStatus(plan: Plan) {
+  const count = plan.prices?.filter((price) => price.stripe_active).length || 0;
+  if (count > 0) return `${count} precio${count === 1 ? "" : "s"}`;
+  return plan.stripe_price_id ? "Vinculado" : "Sin Stripe";
 }
 
 function Field({
@@ -416,9 +448,9 @@ function ServicesDashboardContent() {
                   rows={plans.map((p) => [
                     p.name,
                     p.slug,
-                    `${p.price_amount} ${p.currency}`,
+                    planPricesLabel(p),
                     p.service_limit ?? "Ilimitado",
-                    p.stripe_price_id ? "Vinculado" : "Sin Stripe",
+                    planStripeStatus(p),
                     p.is_active ? "Si" : "No",
                   ])}
                 />
