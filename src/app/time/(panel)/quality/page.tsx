@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/AuthProvider";
 import { apiFetch, ApiError } from "@/lib/api";
@@ -75,7 +75,7 @@ function buildQualityQuery(
 
 export default function QualityPage() {
   const { t, locale } = useI18n();
-  const { token } = useAuth();
+  const { token, employee: authEmployee } = useAuth();
   const [items, setItems] = useState<QItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [employees, setEmployees] = useState<EmpOption[]>([]);
@@ -93,6 +93,11 @@ export default function QualityPage() {
     index: number;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const scopedRegion = useMemo(() => {
+    const r = authEmployee?.region;
+    return r != null && String(r).trim() !== "" ? String(r).trim() : null;
+  }, [authEmployee?.region]);
 
   const fetchItems = useCallback(
     async (
@@ -292,6 +297,11 @@ export default function QualityPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">{t("qualityTitle")}</h1>
           <p className="mt-1 text-sm text-slate-400">{t("qualitySubtitle")}</p>
+          {scopedRegion && (
+            <p className="mt-2 text-xs text-amber-200/90">
+              {t("qualityScopedBanner", { region: scopedRegion })}
+            </p>
+          )}
         </div>
         <button
           type="button"
