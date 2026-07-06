@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/AuthProvider";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatReportingDateTime } from "@/lib/timezone";
+import { CalendarDateField } from "@/components/CalendarDateField";
+import { EMPLOYEE_REGIONS } from "@/lib/employeeRegions";
 
 const COUNT_UP_MS = 900;
 
@@ -104,6 +106,23 @@ type ActRow = {
   index: number;
 };
 
+type QualityReviewerStats = {
+  items: {
+    inspectorId: string;
+    inspectorCode: string;
+    inspectorName: string;
+    reviewedOrders: number;
+    reviewedPhotos: number;
+    okPhotos: number;
+    fePhotos: number;
+    errorPhotos: number;
+    lastReviewedAt: string | null;
+  }[];
+  totalReviewedOrders: number;
+  totalReviewedPhotos: number;
+  region: string | null;
+};
+
 function StatCard({
   label,
   target,
@@ -126,12 +145,24 @@ function StatCard({
 
 export default function DashboardPage() {
   const { t, locale } = useI18n();
-  const { token } = useAuth();
+  const { token, employee: authEmployee } = useAuth();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [attendance, setAttendance] = useState<AttRow[]>([]);
   const [activity, setActivity] = useState<ActRow[]>([]);
+  const [qualityStats, setQualityStats] = useState<QualityReviewerStats | null>(null);
+  const [qualityFromDate, setQualityFromDate] = useState("");
+  const [qualityToDate, setQualityToDate] = useState("");
+  const [qualityRegion, setQualityRegion] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [qualityErr, setQualityErr] = useState<string | null>(null);
   const [statsReplayKey, setStatsReplayKey] = useState(0);
+
+  const scopedRegion = useMemo(() => {
+    const r = authEmployee?.region;
+    return r != null && String(r).trim() !== "" ? String(r).trim() : null;
+  }, [authEmployee?.region]);
+
+  const effectiveQualityRegion = scopedRegion || qualityRegion;
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -151,9 +182,32 @@ export default function DashboardPage() {
     }
   }, [token, t]);
 
+  const loadQualityStats = useCallback(async () => {
+    if (!token) return;
+    setQualityErr(null);
+    try {
+      const qs = new URLSearchParams();
+      if (qualityFromDate) qs.set("fromDate", qualityFromDate);
+      if (qualityToDate) qs.set("toDate", qualityToDate);
+      if (effectiveQualityRegion) qs.set("region", effectiveQualityRegion);
+      const query = qs.toString();
+      const data = await apiFetch<QualityReviewerStats>(
+        `/admin/quality/reviewer-stats${query ? `?${query}` : ""}`,
+        { token }
+      );
+      setQualityStats(data);
+    } catch (e) {
+      setQualityErr(e instanceof ApiError ? e.message : t("errorLoad"));
+    }
+  }, [token, t, qualityFromDate, qualityToDate, effectiveQualityRegion]);
+
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    loadQualityStats();
+  }, [loadQualityStats]);
 
   function eventLabel(type: string) {
     const key = `event${type}` as const;
@@ -164,6 +218,21 @@ export default function DashboardPage() {
   function fmtDate(iso: string) {
     return formatReportingDateTime(iso, locale);
   }
+
+  function applyQualityFilters() {
+    void loadQualityStats();
+  }
+
+  function clearQualityFilters() {
+    setQualityFromDate("");
+    setQualityToDate("");
+    if (!scopedRegion) setQualityRegion("");
+  }
+
+  const maxReviewedOrders = Math.max(
+    1,
+    ...(qualityStats?.items || []).map((row) => row.reviewedOrders)
+  );
 
   return (
     <div className="space-y-8">
@@ -202,6 +271,129 @@ export default function DashboardPage() {
         <StatCard label={t("tardiness")} target={summary?.tardinessToday ?? null} replayKey={statsReplayKey} />
         <StatCard label={t("geofences")} target={summary?.geofences ?? null} replayKey={statsReplayKey} />
       </div>
+
+      <section className="ui-card p-4 sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight text-white">{t("qualityReviewerStatsTitle")}</h2>
+            <p className="mt-1 text-sm text-slate-500">{t("qualityReviewerStatsSubtitle")}</p>
+            {qualityStats?.region && (
+              <p className="mt-2 text-xs text-amber-200/90">
+                {t("qualityReviewerStatsRegion", { region: qualityStats.region })}
+              </p>
+            )}
+          </div>
+          <div className="grid w-full gap-3 sm:grid-cols-2 xl:max-w-3xl xl:grid-cols-4">
+            <CalendarDateField
+              id="quality-reviewer-from"
+              label={t("filterFromDate")}
+              value={qualityFromDate}
+              onChange={setQualityFromDate}
+              openLabel={`${t("openCalendar")} — ${t("filterFromDate")}`}
+            />
+            <CalendarDateField
+              id="quality-reviewer-to"
+              label={t("filterToDate")}
+              value={qualityToDate}
+              onChange={setQualityToDate}
+              openLabel={`${t("openCalendar")} — ${t("filterToDate")}`}
+            />
+            <div>
+              <label htmlFor="quality-reviewer-region" className="block text-xs font-medium text-slate-400">
+                {t("employeesRegion")}
+              </label>
+              <select
+                id="quality-reviewer-region"
+                value={scopedRegion || qualityRegion}
+                disabled={Boolean(scopedRegion)}
+                onChange={(e) => setQualityRegion(e.target.value)}
+                className="mt-1.5 min-h-[44px] w-full rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2.5 text-sm text-white outline-none focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="">{t("qualityReviewerAllRegions")}</option>
+                {EMPLOYEE_REGIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={applyQualityFilters}
+                className="rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-teal-500/20 transition hover:from-teal-400 hover:to-emerald-400"
+              >
+                {t("filterApply")}
+              </button>
+              <button
+                type="button"
+                onClick={clearQualityFilters}
+                className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-2.5 text-sm text-slate-200 transition hover:border-teal-400/30"
+              >
+                {t("filterClear")}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {qualityErr && <p className="mt-4 text-sm text-rose-400">{qualityErr}</p>}
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              {t("qualityReviewedOrders")}
+            </p>
+            <p className="mt-2 text-3xl font-bold text-white tabular-nums">
+              {qualityStats?.totalReviewedOrders ?? 0}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              {t("qualityReviewedPhotos")}
+            </p>
+            <p className="mt-2 text-3xl font-bold text-white tabular-nums">
+              {qualityStats?.totalReviewedPhotos ?? 0}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          {(qualityStats?.items || []).length === 0 && (
+            <p className="rounded-2xl border border-dashed border-white/[0.1] py-10 text-center text-sm text-slate-500">
+              {t("noData")}
+            </p>
+          )}
+          {(qualityStats?.items || []).map((row) => {
+            const pct = Math.max(6, Math.round((row.reviewedOrders / maxReviewedOrders) * 100));
+            return (
+              <div key={row.inspectorId} className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-white">{row.inspectorName}</p>
+                    <p className="mt-0.5 font-mono text-xs text-slate-500">{row.inspectorCode}</p>
+                  </div>
+                  <div className="text-sm text-slate-400">
+                    <span className="font-semibold text-teal-200">{row.reviewedOrders}</span>{" "}
+                    {t("qualityReviewedOrdersShort")} · {row.reviewedPhotos} {t("qualityReviewedPhotosShort")}
+                  </div>
+                </div>
+                <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-900/80 ring-1 ring-white/[0.06]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-300 shadow-[0_0_18px_rgba(45,212,191,0.35)]"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                  <span>OK: {row.okPhotos}</span>
+                  <span>FE: {row.fePhotos}</span>
+                  <span>Error: {row.errorPhotos}</span>
+                  {row.lastReviewedAt && <span>{t("qualityLastReview")}: {fmtDate(row.lastReviewedAt)}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="ui-card p-4 sm:p-5">
