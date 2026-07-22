@@ -88,7 +88,7 @@ export const messages: Record<
     profileRegionLabel: "Operational region",
     profileRegionPlaceholder: "e.g. La Vega (leave empty for company-wide access)",
     profileRegionHint:
-      "Choose Este, Norte, or Sur (not a geofence). When set, you only see employees and attendance in that region. Leave unassigned for company-wide access.",
+      "Choose Este, Distrito Este, Norte, or Sur (not a geofence). When set, you only see employees and attendance in that region. Leave unassigned for company-wide access.",
     profileSaved: "Profile saved.",
     employeesTitle: "Employees",
     employeesSubtitle: "Registered employees by employee ID.",
@@ -97,7 +97,7 @@ export const messages: Record<
     employeesRegion: "Region",
     employeeRegionNone: "Unassigned",
     employeesRegionHint:
-      "Operational area: Este, Norte, or Sur. Not a geofence; it groups users for admin visibility.",
+      "Operational area: Este, Distrito Este, Norte, or Sur. Not a geofence; it groups users for admin visibility.",
     employeesScopedBanner: "You only see users and attendance for region: {region}.",
     employeeStatusLabel: "Employee status",
     employeeStatusActive: "Active",
@@ -313,7 +313,7 @@ export const messages: Record<
     profileRegionLabel: "Región operativa",
     profileRegionPlaceholder: "ej. La Vega (vacío = acceso a toda la compañía)",
     profileRegionHint:
-      "Elija Este, Norte o Sur (no es geocerca). Si tiene valor, solo verá empleados y asistencia de esa región. Sin asignar = toda la compañía.",
+      "Elija Este, Distrito Este, Norte o Sur (no es geocerca). Si tiene valor, solo verá empleados y asistencia de esa región. Sin asignar = toda la compañía.",
     profileSaved: "Perfil guardado.",
     employeesTitle: "Empleados",
     employeesSubtitle: "Empleados registrados por ID de empleado.",
@@ -322,7 +322,7 @@ export const messages: Record<
     employeesRegion: "Región / área",
     employeeRegionNone: "Sin asignar",
     employeesRegionHint:
-      "Área operativa: Este, Norte o Sur. No es una geocerca; agrupa usuarios para la vista del administrador.",
+      "Área operativa: Este, Distrito Este, Norte o Sur. No es una geocerca; agrupa usuarios para la vista del administrador.",
     employeesScopedBanner: "Solo ve usuarios y asistencia de la región: {region}.",
     employeeStatusLabel: "Estado del empleado",
     employeeStatusActive: "Activo",
