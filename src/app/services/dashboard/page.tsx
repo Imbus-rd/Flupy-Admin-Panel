@@ -158,6 +158,17 @@ function ServicesDashboardContent() {
   const [saving, setSaving] = useState(false);
   const [syncingStripe, setSyncingStripe] = useState(false);
   const [stripeSyncMessage, setStripeSyncMessage] = useState<string | null>(null);
+  const [servicesCountry, setServicesCountry] = useState("DR");
+  const [editingServiceId, setEditingServiceId] = useState<number | null>(null);
+  const [serviceEditForm, setServiceEditForm] = useState({
+    name: "",
+    slug: "",
+    description: "",
+    icon_url: "",
+    country: "DR",
+    sort_order: "0",
+    is_active: true,
+  });
 
   const [serviceForm, setServiceForm] = useState({
     name: "",
@@ -200,13 +211,13 @@ function ServicesDashboardContent() {
     try {
       const [dash, serviceRes, planRes, providerRes, orderRes] = await Promise.all([
         servicesFetch<DashboardData>("/api/admin/dashboard", { token }),
-        servicesFetch<{ services: ServiceCategory[] }>("/api/admin/services", { token }),
+        servicesFetch<{ categories: ServiceCategory[] }>(`/api/orders/categories?country=${encodeURIComponent(servicesCountry)}`, { token }),
         servicesFetch<{ plans: Plan[] }>("/api/admin/plans", { token }),
         servicesFetch<{ providers: Provider[] }>("/api/admin/providers?limit=25", { token }),
         servicesFetch<{ orders: Order[] }>("/api/admin/orders?limit=25", { token }),
       ]);
       setDashboard(dash);
-      setServices(serviceRes.services || []);
+      setServices(serviceRes.categories || []);
       setPlans(planRes.plans || []);
       setProviders(providerRes.providers || []);
       setOrders(orderRes.orders || []);
@@ -220,7 +231,7 @@ function ServicesDashboardContent() {
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, servicesCountry]);
 
   async function createService(e: React.FormEvent) {
     e.preventDefault();
@@ -240,6 +251,59 @@ function ServicesDashboardContent() {
       await loadAll();
     } catch (err) {
       setError(err instanceof ServicesApiError ? err.message : "No se pudo crear el servicio");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startServiceEdit(service: ServiceCategory) {
+    setEditingServiceId(service.id);
+    setServiceEditForm({
+      name: service.name || "",
+      slug: service.slug || "",
+      description: service.description || "",
+      icon_url: service.icon_url || "",
+      country: service.country || "DR",
+      sort_order: String(service.sort_order ?? 0),
+      is_active: !!service.is_active,
+    });
+  }
+
+  function cancelServiceEdit() {
+    setEditingServiceId(null);
+    setServiceEditForm({
+      name: "",
+      slug: "",
+      description: "",
+      icon_url: "",
+      country: "DR",
+      sort_order: "0",
+      is_active: true,
+    });
+  }
+
+  async function saveServiceEdit() {
+    if (!token || !editingServiceId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await servicesFetch(`/api/admin/services/${editingServiceId}`, {
+        token,
+        method: "PUT",
+        body: JSON.stringify({
+          name: serviceEditForm.name,
+          slug: serviceEditForm.slug,
+          description: serviceEditForm.description || null,
+          icon_url: serviceEditForm.icon_url || null,
+          country: serviceEditForm.country,
+          sort_order: Number(serviceEditForm.sort_order || 0),
+          is_active: serviceEditForm.is_active ? 1 : 0,
+        }),
+      });
+      cancelServiceEdit();
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof ServicesApiError ? err.message : "No se pudo actualizar el servicio");
     } finally {
       setSaving(false);
     }
@@ -395,10 +459,108 @@ function ServicesDashboardContent() {
                     Crear servicio
                   </button>
                 </form>
-                <DataTable
-                  columns={["Nombre", "Slug", "Pais", "Activo", "Orden"]}
-                  rows={services.map((s) => [s.name, s.slug, s.country, s.is_active ? "Si" : "No", s.sort_order])}
-                />
+                <div className="space-y-4">
+                  <div className="ui-card flex flex-wrap items-end gap-3 rounded-2xl p-4">
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-500">Pais</span>
+                      <input
+                        value={servicesCountry}
+                        onChange={(e) => setServicesCountry(e.target.value.toUpperCase())}
+                        className="mt-1.5 w-28 rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={loadAll}
+                      className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-teal-400/30 hover:bg-white/[0.07]"
+                    >
+                      Recargar desde backend
+                    </button>
+                    <div className="text-sm text-slate-400">Total backend ({servicesCountry}): <span className="font-semibold text-white">{services.length}</span></div>
+                  </div>
+
+                  <div className="ui-table-wrap overflow-hidden rounded-2xl">
+                    <div className="scrollbar-thin overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead className="border-b border-white/[0.07] bg-white/[0.03] text-xs uppercase tracking-wider text-slate-500">
+                          <tr>
+                            <th className="px-4 py-3 font-semibold">Nombre</th>
+                            <th className="px-4 py-3 font-semibold">Slug</th>
+                            <th className="px-4 py-3 font-semibold">Icono</th>
+                            <th className="px-4 py-3 font-semibold">Pais</th>
+                            <th className="px-4 py-3 font-semibold">Activo</th>
+                            <th className="px-4 py-3 font-semibold">Orden</th>
+                            <th className="px-4 py-3 font-semibold">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/[0.06]">
+                          {services.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                                Sin servicios para {servicesCountry}
+                              </td>
+                            </tr>
+                          ) : (
+                            services.map((s) => {
+                              const editing = editingServiceId === s.id;
+                              return (
+                                <tr key={s.id} className="text-slate-300">
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <input value={serviceEditForm.name} onChange={(e) => setServiceEditForm({ ...serviceEditForm, name: e.target.value })} className="w-44 rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-sm text-white" />
+                                    ) : s.name}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <input value={serviceEditForm.slug} onChange={(e) => setServiceEditForm({ ...serviceEditForm, slug: e.target.value })} className="w-44 rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-sm text-white" />
+                                    ) : s.slug}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <input value={serviceEditForm.icon_url} onChange={(e) => setServiceEditForm({ ...serviceEditForm, icon_url: e.target.value })} className="w-48 rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-sm text-white" />
+                                    ) : (s.icon_url || "-")}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <input value={serviceEditForm.country} onChange={(e) => setServiceEditForm({ ...serviceEditForm, country: e.target.value.toUpperCase() })} className="w-16 rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-sm text-white" />
+                                    ) : s.country}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <select
+                                        value={serviceEditForm.is_active ? "1" : "0"}
+                                        onChange={(e) => setServiceEditForm({ ...serviceEditForm, is_active: e.target.value === "1" })}
+                                        className="rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-sm text-white"
+                                      >
+                                        <option value="1">Si</option>
+                                        <option value="0">No</option>
+                                      </select>
+                                    ) : (s.is_active ? "Si" : "No")}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <input value={serviceEditForm.sort_order} type="number" onChange={(e) => setServiceEditForm({ ...serviceEditForm, sort_order: e.target.value })} className="w-20 rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-sm text-white" />
+                                    ) : s.sort_order}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <div className="flex gap-2">
+                                        <button type="button" onClick={saveServiceEdit} disabled={saving} className="rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-950 disabled:opacity-60">Guardar</button>
+                                        <button type="button" onClick={cancelServiceEdit} className="rounded-lg border border-white/[0.12] px-3 py-1 text-xs font-semibold text-slate-200">Cancelar</button>
+                                      </div>
+                                    ) : (
+                                      <button type="button" onClick={() => startServiceEdit(s)} className="rounded-lg border border-teal-400/35 px-3 py-1 text-xs font-semibold text-teal-200 hover:bg-teal-400/10">Editar</button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </section>
             )}
 
