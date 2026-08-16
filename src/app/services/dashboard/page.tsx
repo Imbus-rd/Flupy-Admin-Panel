@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ServicesShell } from "@/components/ServicesShell";
+import { Snackbar } from "@/components/Snackbar";
 import { servicesFetch, ServicesApiError } from "@/lib/servicesApi";
 import { useServicesAuth } from "@/lib/ServicesAuthProvider";
 
@@ -57,6 +58,7 @@ type Provider = {
   email: string;
   phone: string | null;
   country: string;
+  is_active: number;
   membership_status: string;
   subscription_plan: string | null;
   membership_expires_at: string | null;
@@ -65,6 +67,17 @@ type Provider = {
   total_ratings: number | null;
   service_count: number;
   service_limit: number | null;
+};
+
+type Client = {
+  user_id: number;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  country: string;
+  is_active: number;
+  created_at: string;
+  order_count: number;
 };
 
 type Order = {
@@ -83,8 +96,18 @@ const tabs = [
   { id: "services", label: "Servicios" },
   { id: "plans", label: "Planes" },
   { id: "providers", label: "Proveedores" },
+  { id: "clients", label: "Clientes" },
   { id: "orders", label: "Ordenes" },
 ];
+
+const COUNTRY_LABELS: Record<string, string> = {
+  DR: "Republica Dominicana",
+  DO: "Republica Dominicana",
+  US: "Estados Unidos",
+  PR: "Puerto Rico",
+};
+
+const MEMBERSHIP_STATUSES = ["none", "active", "past_due", "canceled"];
 
 function numberValue(value: unknown) {
   const parsed = Number(value ?? 0);
@@ -152,13 +175,61 @@ function ServicesDashboardContent() {
   const [services, setServices] = useState<ServiceCategory[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [syncingStripe, setSyncingStripe] = useState(false);
   const [stripeSyncMessage, setStripeSyncMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ open: boolean; message: string }>({ open: false, message: "" });
   const [servicesCountry, setServicesCountry] = useState("DR");
+  const [providerFilters, setProviderFilters] = useState({
+    country: "",
+    plan: "",
+    membership: "",
+    search: "",
+  });
+  const [clientFilters, setClientFilters] = useState({
+    country: "",
+    status: "",
+    search: "",
+  });
+  const [providerForm, setProviderForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    plan: "",
+    country: "DR",
+  });
+  const [showProviderCreateModal, setShowProviderCreateModal] = useState(false);
+  const [providerMembershipModal, setProviderMembershipModal] = useState<{
+    open: boolean;
+    provider: Provider | null;
+    plan: string;
+    membership_status: string;
+  }>({
+    open: false,
+    provider: null,
+    plan: "",
+    membership_status: "none",
+  });
+  const [providerDeleteModal, setProviderDeleteModal] = useState<{
+    open: boolean;
+    provider: Provider | null;
+    step: 1 | 2;
+  }>({ open: false, provider: null, step: 1 });
+  const [clientDeleteModal, setClientDeleteModal] = useState<{
+    open: boolean;
+    client: Client | null;
+    step: 1 | 2;
+  }>({ open: false, client: null, step: 1 });
+  const [clientOrdersModal, setClientOrdersModal] = useState<{
+    open: boolean;
+    client: Client | null;
+    orders: Order[];
+  }>({ open: false, client: null, orders: [] });
   const [editingServiceId, setEditingServiceId] = useState<number | null>(null);
   const [serviceEditForm, setServiceEditForm] = useState({
     name: "",
@@ -204,22 +275,78 @@ function ServicesDashboardContent() {
     ];
   }, [dashboard]);
 
+  const availablePlanOptions = useMemo(() => {
+    const dynamic = plans.map((p) => p.slug).filter(Boolean);
+    const merged = new Set(["none", ...dynamic]);
+    return Array.from(merged);
+  }, [plans]);
+
+  const countryOptions = useMemo(() => {
+    const merged = new Set<string>(["DR", "US", "PR"]);
+    providers.forEach((p) => merged.add(String(p.country || "").toUpperCase()));
+    clients.forEach((c) => merged.add(String(c.country || "").toUpperCase()));
+    return Array.from(merged).filter(Boolean).sort();
+  }, [providers, clients]);
+
+  function openToast(message: string) {
+    setToast({ open: false, message: "" });
+    window.setTimeout(() => setToast({ open: true, message }), 10);
+  }
+
+  function toCountryLabel(country: string | null | undefined) {
+    const code = String(country || "").toUpperCase();
+    return COUNTRY_LABELS[code] || code || "N/A";
+  }
+
+  function toCountryFlag(country: string | null | undefined) {
+    const code = String(country || "").toUpperCase();
+    if (!/^[A-Z]{2}$/.test(code)) return "🏳️";
+    return String.fromCodePoint(...code.split("").map((char) => 127397 + char.charCodeAt(0)));
+  }
+
+  function buildQuery(params: Record<string, string | number | undefined | null>) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === null || value === undefined) return;
+      const text = String(value).trim();
+      if (!text) return;
+      query.set(key, text);
+    });
+    const serialized = query.toString();
+    return serialized ? `?${serialized}` : "";
+  }
+
   async function loadAll() {
     if (!token) return;
     setLoading(true);
     setError(null);
     try {
-      const [dash, serviceRes, planRes, providerRes, orderRes] = await Promise.all([
+      const providerQuery = buildQuery({
+        limit: 200,
+        country: providerFilters.country,
+        plan: providerFilters.plan,
+        membership: providerFilters.membership,
+        search: providerFilters.search,
+      });
+      const clientQuery = buildQuery({
+        limit: 200,
+        country: clientFilters.country,
+        status: clientFilters.status,
+        search: clientFilters.search,
+      });
+      const [dash, serviceRes, planRes, providerRes, clientRes, orderRes] = await Promise.all([
         servicesFetch<DashboardData>("/api/admin/dashboard", { token }),
         servicesFetch<{ categories: ServiceCategory[] }>(`/api/orders/categories?country=${encodeURIComponent(servicesCountry)}`, { token }),
         servicesFetch<{ plans: Plan[] }>("/api/admin/plans", { token }),
-        servicesFetch<{ providers: Provider[] }>("/api/admin/providers?limit=25", { token }),
+        servicesFetch<{ providers: Provider[] }>(`/api/admin/providers${providerQuery}`, { token }),
+        servicesFetch<{ clients: Client[] }>(`/api/admin/clients${clientQuery}`, { token }),
         servicesFetch<{ orders: Order[] }>("/api/admin/orders?limit=25", { token }),
       ]);
       setDashboard(dash);
       setServices(serviceRes.categories || []);
       setPlans(planRes.plans || []);
       setProviders(providerRes.providers || []);
+      setClients(clientRes.clients || []);
       setOrders(orderRes.orders || []);
     } catch (err) {
       setError(err instanceof ServicesApiError ? err.message : "No se pudo cargar el panel");
@@ -364,6 +491,222 @@ function ServicesDashboardContent() {
       setError(err instanceof ServicesApiError ? err.message : "No se pudo sincronizar Stripe");
     } finally {
       setSyncingStripe(false);
+    }
+  }
+
+  async function createProvider(e: React.FormEvent) {
+    e.preventDefault();
+    if (!token) return;
+    setActionLoading("create-provider");
+    setError(null);
+    try {
+      await servicesFetch("/api/admin/providers", {
+        token,
+        method: "POST",
+        body: JSON.stringify({
+          name: providerForm.name.trim(),
+          email: providerForm.email.trim().toLowerCase(),
+          password: providerForm.password,
+          country: providerForm.country.trim().toUpperCase(),
+          plan: providerForm.plan || "none",
+        }),
+      });
+      setShowProviderCreateModal(false);
+      setProviderForm({ name: "", email: "", password: "", plan: "", country: "DR" });
+      openToast("Proveedor creado correctamente.");
+      await loadAll();
+    } catch (err) {
+      const message = err instanceof ServicesApiError ? err.message : "No se pudo crear el proveedor";
+      setError(message);
+      openToast(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  function openMembershipModal(provider: Provider) {
+    setProviderMembershipModal({
+      open: true,
+      provider,
+      plan: provider.subscription_plan || "none",
+      membership_status: provider.membership_status || "none",
+    });
+  }
+
+  async function saveProviderMembership() {
+    if (!token || !providerMembershipModal.provider) return;
+    setActionLoading(`provider-membership-${providerMembershipModal.provider.user_id}`);
+    setError(null);
+    try {
+      await servicesFetch(`/api/admin/providers/${providerMembershipModal.provider.user_id}/membership`, {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({
+          plan: providerMembershipModal.plan,
+          membership_status: providerMembershipModal.membership_status,
+        }),
+      });
+      setProviderMembershipModal({ open: false, provider: null, plan: "", membership_status: "none" });
+      openToast("Membresia actualizada.");
+      await loadAll();
+    } catch (err) {
+      const message = err instanceof ServicesApiError ? err.message : "No se pudo actualizar la membresia";
+      setError(message);
+      openToast(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function setProviderStatus(provider: Provider, status: "active" | "suspended") {
+    if (!token) return;
+    const confirmed = window.confirm(
+      status === "suspended"
+        ? `¿Suspender a ${provider.full_name}?`
+        : `¿Activar a ${provider.full_name}?`
+    );
+    if (!confirmed) return;
+    setActionLoading(`provider-status-${provider.user_id}`);
+    setError(null);
+    try {
+      await servicesFetch(`/api/admin/providers/${provider.user_id}/status`, {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      openToast(status === "active" ? "Proveedor activado." : "Proveedor suspendido.");
+      await loadAll();
+    } catch (err) {
+      const message = err instanceof ServicesApiError ? err.message : "No se pudo cambiar el estado";
+      setError(message);
+      openToast(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function deleteProviderConfirmed() {
+    if (!token || !providerDeleteModal.provider) return;
+    setActionLoading(`provider-delete-${providerDeleteModal.provider.user_id}`);
+    setError(null);
+    try {
+      await servicesFetch(`/api/admin/providers/${providerDeleteModal.provider.user_id}`, {
+        token,
+        method: "DELETE",
+      });
+      setProviderDeleteModal({ open: false, provider: null, step: 1 });
+      openToast("Proveedor eliminado.");
+      await loadAll();
+    } catch (err) {
+      const message = err instanceof ServicesApiError ? err.message : "No se pudo eliminar el proveedor";
+      setError(message);
+      openToast(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function resetProviderPassword(provider: Provider) {
+    if (!token) return;
+    setActionLoading(`provider-reset-${provider.user_id}`);
+    setError(null);
+    try {
+      await servicesFetch(`/api/admin/providers/${provider.user_id}/reset-password`, {
+        token,
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      openToast("Se envio email de restablecimiento.");
+    } catch (err) {
+      const message = err instanceof ServicesApiError ? err.message : "No se pudo enviar el reset";
+      setError(message);
+      openToast(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function setClientStatus(client: Client, status: "active" | "inactive") {
+    if (!token) return;
+    const confirmed = window.confirm(
+      status === "inactive"
+        ? `¿Desactivar a ${client.full_name}?`
+        : `¿Activar a ${client.full_name}?`
+    );
+    if (!confirmed) return;
+    setActionLoading(`client-status-${client.user_id}`);
+    setError(null);
+    try {
+      await servicesFetch(`/api/admin/clients/${client.user_id}/status`, {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      openToast(status === "active" ? "Cliente activado." : "Cliente desactivado.");
+      await loadAll();
+    } catch (err) {
+      const message = err instanceof ServicesApiError ? err.message : "No se pudo cambiar estado del cliente";
+      setError(message);
+      openToast(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function deleteClientConfirmed() {
+    if (!token || !clientDeleteModal.client) return;
+    setActionLoading(`client-delete-${clientDeleteModal.client.user_id}`);
+    setError(null);
+    try {
+      await servicesFetch(`/api/admin/clients/${clientDeleteModal.client.user_id}`, {
+        token,
+        method: "DELETE",
+      });
+      setClientDeleteModal({ open: false, client: null, step: 1 });
+      openToast("Cliente eliminado.");
+      await loadAll();
+    } catch (err) {
+      const message = err instanceof ServicesApiError ? err.message : "No se pudo eliminar el cliente";
+      setError(message);
+      openToast(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function resetClientPassword(client: Client) {
+    if (!token) return;
+    setActionLoading(`client-reset-${client.user_id}`);
+    setError(null);
+    try {
+      await servicesFetch(`/api/admin/clients/${client.user_id}/reset-password`, {
+        token,
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      openToast("Se envio email de restablecimiento.");
+    } catch (err) {
+      const message = err instanceof ServicesApiError ? err.message : "No se pudo enviar el reset";
+      setError(message);
+      openToast(message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function openClientOrders(client: Client) {
+    if (!token) return;
+    setActionLoading(`client-orders-${client.user_id}`);
+    setError(null);
+    try {
+      const response = await servicesFetch<{ orders: Order[] }>(`/api/admin/clients/${client.user_id}/orders?limit=50`, { token });
+      setClientOrdersModal({ open: true, client, orders: response.orders || [] });
+    } catch (err) {
+      const message = err instanceof ServicesApiError ? err.message : "No se pudieron cargar las ordenes";
+      setError(message);
+      openToast(message);
+    } finally {
+      setActionLoading(null);
     }
   }
 
@@ -620,18 +963,324 @@ function ServicesDashboardContent() {
             )}
 
             {activeTab === "providers" && (
-              <DataTable
-                columns={["Proveedor", "Email", "Plan", "Membresia", "Servicios", "Rating", "Disponible"]}
-                rows={providers.map((p) => [
-                  p.full_name,
-                  p.email,
-                  p.subscription_plan || "none",
-                  p.membership_status,
-                  `${p.service_count}${p.service_limit ? `/${p.service_limit}` : ""}`,
-                  numberValue(p.average_rating).toFixed(2),
-                  p.is_available ? "Si" : "No",
-                ])}
-              />
+              <section className="space-y-4">
+                <div className="ui-card rounded-2xl p-4">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-500">Filtrar por pais</span>
+                      <select
+                        value={providerFilters.country}
+                        onChange={(e) => setProviderFilters((prev) => ({ ...prev, country: e.target.value }))}
+                        className="mt-1.5 w-40 rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                      >
+                        <option value="">Todos</option>
+                        {countryOptions.map((countryCode) => (
+                          <option key={countryCode} value={countryCode}>
+                            {toCountryFlag(countryCode)} {toCountryLabel(countryCode)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-500">Plan</span>
+                      <select
+                        value={providerFilters.plan}
+                        onChange={(e) => setProviderFilters((prev) => ({ ...prev, plan: e.target.value }))}
+                        className="mt-1.5 w-36 rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                      >
+                        <option value="">Todos</option>
+                        {availablePlanOptions.map((planSlug) => (
+                          <option key={planSlug} value={planSlug}>
+                            {planSlug}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-500">Membresia</span>
+                      <select
+                        value={providerFilters.membership}
+                        onChange={(e) => setProviderFilters((prev) => ({ ...prev, membership: e.target.value }))}
+                        className="mt-1.5 w-36 rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                      >
+                        <option value="">Todas</option>
+                        {MEMBERSHIP_STATUSES.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block flex-1 min-w-[14rem]">
+                      <span className="text-xs font-medium text-slate-500">Buscar nombre o email</span>
+                      <input
+                        value={providerFilters.search}
+                        onChange={(e) => setProviderFilters((prev) => ({ ...prev, search: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void loadAll();
+                          }
+                        }}
+                        className="mt-1.5 w-full rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                        placeholder="nombre@correo.com"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={loadAll}
+                      className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-teal-400/30 hover:bg-white/[0.07]"
+                    >
+                      Aplicar filtros
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowProviderCreateModal(true)}
+                      className="rounded-xl bg-teal-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-teal-300"
+                    >
+                      Crear Proveedor
+                    </button>
+                  </div>
+                </div>
+
+                <div className="ui-table-wrap overflow-hidden rounded-2xl">
+                  <div className="scrollbar-thin overflow-x-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="border-b border-white/[0.07] bg-white/[0.03] text-xs uppercase tracking-wider text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold">Proveedor</th>
+                          <th className="px-4 py-3 font-semibold">Email</th>
+                          <th className="px-4 py-3 font-semibold">Pais</th>
+                          <th className="px-4 py-3 font-semibold">Plan</th>
+                          <th className="px-4 py-3 font-semibold">Membresia</th>
+                          <th className="px-4 py-3 font-semibold">Servicios</th>
+                          <th className="px-4 py-3 font-semibold">Rating</th>
+                          <th className="px-4 py-3 font-semibold">Estado</th>
+                          <th className="px-4 py-3 font-semibold">Disponible</th>
+                          <th className="px-4 py-3 font-semibold">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/[0.06]">
+                        {providers.length === 0 ? (
+                          <tr>
+                            <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
+                              Sin proveedores
+                            </td>
+                          </tr>
+                        ) : (
+                          providers.map((p) => (
+                            <tr key={p.user_id} className="text-slate-300">
+                              <td className="whitespace-nowrap px-4 py-3 font-medium text-white">{p.full_name}</td>
+                              <td className="whitespace-nowrap px-4 py-3">{p.email}</td>
+                              <td className="whitespace-nowrap px-4 py-3">
+                                {toCountryFlag(p.country)} {toCountryLabel(p.country)}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3">{p.subscription_plan || "none"}</td>
+                              <td className="whitespace-nowrap px-4 py-3">{p.membership_status}</td>
+                              <td className="whitespace-nowrap px-4 py-3">{`${p.service_count}${p.service_limit ? `/${p.service_limit}` : ""}`}</td>
+                              <td className="whitespace-nowrap px-4 py-3">{numberValue(p.average_rating).toFixed(2)}</td>
+                              <td className="whitespace-nowrap px-4 py-3">
+                                <span className={`rounded-full px-2 py-1 text-xs ${p.is_active ? "bg-emerald-400/15 text-emerald-200" : "bg-rose-500/15 text-rose-200"}`}>
+                                  {p.is_active ? "Activo" : "Suspendido"}
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3">{p.is_available ? "Si" : "No"}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => openMembershipModal(p)}
+                                    className="rounded-lg border border-teal-400/35 px-2.5 py-1 text-xs font-semibold text-teal-200 hover:bg-teal-400/10"
+                                  >
+                                    Membresia
+                                  </button>
+                                  {p.is_active ? (
+                                    <button
+                                      type="button"
+                                      disabled={actionLoading === `provider-status-${p.user_id}`}
+                                      onClick={() => void setProviderStatus(p, "suspended")}
+                                      className="rounded-lg border border-amber-400/35 px-2.5 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-400/10 disabled:opacity-60"
+                                    >
+                                      Suspender
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={actionLoading === `provider-status-${p.user_id}`}
+                                      onClick={() => void setProviderStatus(p, "active")}
+                                      className="rounded-lg border border-emerald-400/35 px-2.5 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-400/10 disabled:opacity-60"
+                                    >
+                                      Activar
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    disabled={actionLoading === `provider-reset-${p.user_id}`}
+                                    onClick={() => void resetProviderPassword(p)}
+                                    className="rounded-lg border border-sky-400/35 px-2.5 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-400/10 disabled:opacity-60"
+                                  >
+                                    Reset
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setProviderDeleteModal({ open: true, provider: p, step: 1 })}
+                                    className="rounded-lg border border-rose-500/35 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/10"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeTab === "clients" && (
+              <section className="space-y-4">
+                <div className="ui-card rounded-2xl p-4">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-500">Filtrar por pais</span>
+                      <select
+                        value={clientFilters.country}
+                        onChange={(e) => setClientFilters((prev) => ({ ...prev, country: e.target.value }))}
+                        className="mt-1.5 w-40 rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                      >
+                        <option value="">Todos</option>
+                        {countryOptions.map((countryCode) => (
+                          <option key={countryCode} value={countryCode}>
+                            {toCountryFlag(countryCode)} {toCountryLabel(countryCode)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-500">Estado</span>
+                      <select
+                        value={clientFilters.status}
+                        onChange={(e) => setClientFilters((prev) => ({ ...prev, status: e.target.value }))}
+                        className="mt-1.5 w-36 rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                      >
+                        <option value="">Todos</option>
+                        <option value="active">Activos</option>
+                        <option value="inactive">Inactivos</option>
+                      </select>
+                    </label>
+                    <label className="block flex-1 min-w-[14rem]">
+                      <span className="text-xs font-medium text-slate-500">Buscar nombre o email</span>
+                      <input
+                        value={clientFilters.search}
+                        onChange={(e) => setClientFilters((prev) => ({ ...prev, search: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void loadAll();
+                          }
+                        }}
+                        className="mt-1.5 w-full rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                        placeholder="nombre@correo.com"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={loadAll}
+                      className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-teal-400/30 hover:bg-white/[0.07]"
+                    >
+                      Aplicar filtros
+                    </button>
+                  </div>
+                </div>
+                <div className="ui-table-wrap overflow-hidden rounded-2xl">
+                  <div className="scrollbar-thin overflow-x-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="border-b border-white/[0.07] bg-white/[0.03] text-xs uppercase tracking-wider text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold">Cliente</th>
+                          <th className="px-4 py-3 font-semibold">Email</th>
+                          <th className="px-4 py-3 font-semibold">Fecha registro</th>
+                          <th className="px-4 py-3 font-semibold">Pais</th>
+                          <th className="px-4 py-3 font-semibold">Estado</th>
+                          <th className="px-4 py-3 font-semibold">Ordenes</th>
+                          <th className="px-4 py-3 font-semibold">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/[0.06]">
+                        {clients.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-8 text-center text-slate-500">Sin clientes</td>
+                          </tr>
+                        ) : (
+                          clients.map((c) => (
+                            <tr key={c.user_id} className="text-slate-300">
+                              <td className="whitespace-nowrap px-4 py-3 font-medium text-white">{c.full_name}</td>
+                              <td className="whitespace-nowrap px-4 py-3">{c.email}</td>
+                              <td className="whitespace-nowrap px-4 py-3">{new Date(c.created_at).toLocaleDateString()}</td>
+                              <td className="whitespace-nowrap px-4 py-3">{toCountryFlag(c.country)} {toCountryLabel(c.country)}</td>
+                              <td className="whitespace-nowrap px-4 py-3">
+                                <span className={`rounded-full px-2 py-1 text-xs ${c.is_active ? "bg-emerald-400/15 text-emerald-200" : "bg-rose-500/15 text-rose-200"}`}>
+                                  {c.is_active ? "Activo" : "Inactivo"}
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3">{numberValue(c.order_count)}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex flex-wrap gap-2">
+                                  {c.is_active ? (
+                                    <button
+                                      type="button"
+                                      disabled={actionLoading === `client-status-${c.user_id}`}
+                                      onClick={() => void setClientStatus(c, "inactive")}
+                                      className="rounded-lg border border-amber-400/35 px-2.5 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-400/10 disabled:opacity-60"
+                                    >
+                                      Desactivar
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={actionLoading === `client-status-${c.user_id}`}
+                                      onClick={() => void setClientStatus(c, "active")}
+                                      className="rounded-lg border border-emerald-400/35 px-2.5 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-400/10 disabled:opacity-60"
+                                    >
+                                      Activar
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    disabled={actionLoading === `client-reset-${c.user_id}`}
+                                    onClick={() => void resetClientPassword(c)}
+                                    className="rounded-lg border border-sky-400/35 px-2.5 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-400/10 disabled:opacity-60"
+                                  >
+                                    Reset
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={actionLoading === `client-orders-${c.user_id}`}
+                                    onClick={() => void openClientOrders(c)}
+                                    className="rounded-lg border border-violet-400/35 px-2.5 py-1 text-xs font-semibold text-violet-200 hover:bg-violet-400/10 disabled:opacity-60"
+                                  >
+                                    Ver ordenes
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setClientDeleteModal({ open: true, client: c, step: 1 })}
+                                    className="rounded-lg border border-rose-500/35 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/10"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
             )}
 
             {activeTab === "orders" && (
@@ -650,6 +1299,190 @@ function ServicesDashboardContent() {
             )}
           </>
         )}
+
+        {showProviderCreateModal && (
+          <ModalShell
+            title="Crear proveedor"
+            onClose={() => setShowProviderCreateModal(false)}
+          >
+            <form onSubmit={createProvider} className="space-y-3">
+              <Field label="Nombre" value={providerForm.name} onChange={(v) => setProviderForm((prev) => ({ ...prev, name: v }))} />
+              <Field label="Email" value={providerForm.email} onChange={(v) => setProviderForm((prev) => ({ ...prev, email: v }))} type="email" />
+              <Field label="Contrasena temporal" value={providerForm.password} onChange={(v) => setProviderForm((prev) => ({ ...prev, password: v }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-500">Plan</span>
+                  <select
+                    value={providerForm.plan}
+                    onChange={(e) => setProviderForm((prev) => ({ ...prev, plan: e.target.value }))}
+                    className="mt-1.5 w-full rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2.5 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                  >
+                    {availablePlanOptions.map((planSlug) => (
+                      <option key={planSlug} value={planSlug === "none" ? "" : planSlug}>
+                        {planSlug}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-500">Pais</span>
+                  <select
+                    value={providerForm.country}
+                    onChange={(e) => setProviderForm((prev) => ({ ...prev, country: e.target.value }))}
+                    className="mt-1.5 w-full rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2.5 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                  >
+                    {countryOptions.map((countryCode) => (
+                      <option key={countryCode} value={countryCode}>
+                        {toCountryFlag(countryCode)} {toCountryLabel(countryCode)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowProviderCreateModal(false)} className="rounded-lg border border-white/[0.12] px-3 py-1.5 text-sm text-slate-200">
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading === "create-provider"}
+                  className="rounded-lg bg-teal-400 px-3 py-1.5 text-sm font-semibold text-slate-950 disabled:opacity-60"
+                >
+                  {actionLoading === "create-provider" ? "Guardando..." : "Crear proveedor"}
+                </button>
+              </div>
+            </form>
+          </ModalShell>
+        )}
+
+        {providerMembershipModal.open && providerMembershipModal.provider && (
+          <ModalShell
+            title={`Asignar membresia · ${providerMembershipModal.provider.full_name}`}
+            onClose={() => setProviderMembershipModal({ open: false, provider: null, plan: "", membership_status: "none" })}
+          >
+            <div className="space-y-3">
+              <label className="block">
+                <span className="text-xs font-medium text-slate-500">Plan</span>
+                <select
+                  value={providerMembershipModal.plan}
+                  onChange={(e) => setProviderMembershipModal((prev) => ({ ...prev, plan: e.target.value }))}
+                  className="mt-1.5 w-full rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2.5 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                >
+                  {availablePlanOptions.map((planSlug) => (
+                    <option key={planSlug} value={planSlug}>
+                      {planSlug}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-slate-500">Estado membresia</span>
+                <select
+                  value={providerMembershipModal.membership_status}
+                  onChange={(e) => setProviderMembershipModal((prev) => ({ ...prev, membership_status: e.target.value }))}
+                  className="mt-1.5 w-full rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2.5 text-sm text-white outline-none transition focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20"
+                >
+                  {MEMBERSHIP_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setProviderMembershipModal({ open: false, provider: null, plan: "", membership_status: "none" })}
+                  className="rounded-lg border border-white/[0.12] px-3 py-1.5 text-sm text-slate-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={actionLoading === `provider-membership-${providerMembershipModal.provider.user_id}`}
+                  onClick={() => void saveProviderMembership()}
+                  className="rounded-lg bg-teal-400 px-3 py-1.5 text-sm font-semibold text-slate-950 disabled:opacity-60"
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
+          </ModalShell>
+        )}
+
+        {providerDeleteModal.open && providerDeleteModal.provider && (
+          <DangerModal
+            title={providerDeleteModal.step === 1 ? `¿Suspender y eliminar a ${providerDeleteModal.provider.full_name}?` : "Confirmacion final"}
+            description={
+              providerDeleteModal.step === 1
+                ? "Esta accion desactivara la cuenta del proveedor."
+                : "Esta accion es irreversible. ¿Eliminar proveedor?"
+            }
+            confirmLabel={providerDeleteModal.step === 1 ? "Continuar" : "Eliminar"}
+            loading={actionLoading === `provider-delete-${providerDeleteModal.provider.user_id}`}
+            onCancel={() => setProviderDeleteModal({ open: false, provider: null, step: 1 })}
+            onConfirm={() => {
+              if (providerDeleteModal.step === 1) {
+                setProviderDeleteModal((prev) => ({ ...prev, step: 2 }));
+                return;
+              }
+              void deleteProviderConfirmed();
+            }}
+          />
+        )}
+
+        {clientDeleteModal.open && clientDeleteModal.client && (
+          <DangerModal
+            title={clientDeleteModal.step === 1 ? `¿Eliminar a ${clientDeleteModal.client.full_name}?` : "Confirmacion final"}
+            description={
+              clientDeleteModal.step === 1
+                ? "La cuenta del cliente quedara desactivada inmediatamente."
+                : "Esta accion es irreversible. ¿Eliminar cliente?"
+            }
+            confirmLabel={clientDeleteModal.step === 1 ? "Continuar" : "Eliminar"}
+            loading={actionLoading === `client-delete-${clientDeleteModal.client.user_id}`}
+            onCancel={() => setClientDeleteModal({ open: false, client: null, step: 1 })}
+            onConfirm={() => {
+              if (clientDeleteModal.step === 1) {
+                setClientDeleteModal((prev) => ({ ...prev, step: 2 }));
+                return;
+              }
+              void deleteClientConfirmed();
+            }}
+          />
+        )}
+
+        {clientOrdersModal.open && clientOrdersModal.client && (
+          <ModalShell
+            title={`Ordenes de ${clientOrdersModal.client.full_name}`}
+            onClose={() => setClientOrdersModal({ open: false, client: null, orders: [] })}
+          >
+            <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+              {clientOrdersModal.orders.length === 0 ? (
+                <p className="text-sm text-slate-400">Este cliente no tiene ordenes.</p>
+              ) : (
+                clientOrdersModal.orders.map((o) => (
+                  <div key={o.id} className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="font-semibold text-white">#{o.id}</span>
+                      <span className="text-slate-300">{o.status}</span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-300">{o.service_name}</p>
+                    <p className="mt-1 text-xs text-slate-500">{new Date(o.created_at).toLocaleString()}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </ModalShell>
+        )}
+
+        <Snackbar
+          open={toast.open}
+          message={toast.message}
+          placement="top-end"
+          onClose={() => setToast({ open: false, message: "" })}
+          durationMs={3500}
+        />
       </div>
     </ServicesShell>
   );
@@ -693,6 +1526,76 @@ function DataTable({ columns, rows }: { columns: string[]; rows: Array<Array<Rea
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-2xl border border-white/[0.12] bg-[#0b1324] p-5 shadow-2xl shadow-black/50">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h3 className="text-base font-semibold text-white">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-white/[0.12] px-2.5 py-1 text-xs text-slate-300 hover:bg-white/[0.05]"
+          >
+            Cerrar
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function DangerModal({
+  title,
+  description,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+  loading = false,
+}: {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  loading?: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-2xl border border-rose-500/35 bg-[#2a0f16] p-5 shadow-2xl shadow-rose-900/40">
+        <h3 className="text-base font-semibold text-rose-100">{title}</h3>
+        <p className="mt-2 text-sm text-rose-200/90">{description}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg border border-white/[0.15] px-3 py-1.5 text-sm text-slate-200"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onConfirm}
+            className="rounded-lg bg-rose-500 px-3 py-1.5 text-sm font-semibold text-rose-50 disabled:opacity-60"
+          >
+            {loading ? "Procesando..." : confirmLabel}
+          </button>
+        </div>
       </div>
     </div>
   );

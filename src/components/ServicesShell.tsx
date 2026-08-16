@@ -11,6 +11,7 @@ const nav = [
   { href: "/services/dashboard?tab=services", label: "Servicios" },
   { href: "/services/dashboard?tab=plans", label: "Planes" },
   { href: "/services/dashboard?tab=providers", label: "Proveedores" },
+  { href: "/services/dashboard?tab=clients", label: "Clientes" },
   { href: "/services/dashboard?tab=orders", label: "Ordenes" },
 ];
 
@@ -64,7 +65,7 @@ export function ServicesShell({ children }: { children: React.ReactNode }) {
             <div className="flex gap-2 p-3 lg:flex-col lg:gap-0.5">
               <div className="mb-2 hidden px-2 lg:block">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Operaciones</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">Servicios, proveedores, planes y ordenes.</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">Servicios, proveedores, clientes, planes y ordenes.</p>
               </div>
               {nav.map((item) => {
                 const active = pathname === item.href.split("?")[0] && (item.href.includes("?") ? false : true);
