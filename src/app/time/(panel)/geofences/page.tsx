@@ -16,7 +16,7 @@ type Gf = {
 
 export default function GeofencesPage() {
   const { t } = useI18n();
-  const { token } = useAuth();
+  const { token, employee } = useAuth();
   const [items, setItems] = useState<Gf[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [editItem, setEditItem] = useState<Gf | null>(null);
@@ -25,6 +25,8 @@ export default function GeofencesPage() {
   const [radius, setRadius] = useState("");
   const [formErr, setFormErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -47,11 +49,13 @@ export default function GeofencesPage() {
     setLng(String(g.longitude));
     setRadius(String(g.radiusMeters));
     setFormErr(null);
+    setConfirmingDelete(false);
   }, []);
 
   const closeEdit = useCallback(() => {
     setEditItem(null);
     setFormErr(null);
+    setConfirmingDelete(false);
   }, []);
 
   const submitEdit = useCallback(async () => {
@@ -76,6 +80,37 @@ export default function GeofencesPage() {
       setSaving(false);
     }
   }, [token, editItem, lat, lng, radius, load, closeEdit, t]);
+
+  const deleteGeofence = useCallback(async () => {
+    if (!token || !editItem) return;
+    setDeleting(true);
+    setFormErr(null);
+    try {
+      await apiFetch(`/geofences/${encodeURIComponent(editItem.geofenceKey)}`, {
+        method: "DELETE",
+        token
+      });
+      await load();
+      closeEdit();
+    } catch (e) {
+      if (e instanceof ApiError) {
+        const body = e.body as { code?: string; assignedEmployees?: number } | null;
+        if (body?.code === "GEOFENCE_IN_USE") {
+          setFormErr(
+            t("geofenceInUse").replace("{count}", String(body.assignedEmployees || 0))
+          );
+        } else {
+          setFormErr(e.message);
+        }
+      } else {
+        setFormErr(t("errorLoad"));
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }, [token, editItem, load, closeEdit, t]);
+
+  const canDelete = employee?.role === "ADMIN";
 
   const inputClass =
     "mt-1 w-full rounded-xl border border-white/[0.1] bg-[rgba(3,6,14,0.65)] px-3 py-2 text-sm text-white outline-none focus:border-teal-400/40 focus:ring-2 focus:ring-teal-400/20";
@@ -175,22 +210,62 @@ export default function GeofencesPage() {
               </div>
             </div>
             {formErr && <p className="mt-3 text-sm text-rose-400">{formErr}</p>}
-            <div className="mt-5 flex flex-wrap justify-end gap-2">
+            {confirmingDelete && (
+              <div className="mt-4 rounded-xl border border-rose-400/25 bg-rose-500/10 p-3">
+                <p className="text-sm font-semibold text-rose-200">{t("deleteGeofenceConfirm")}</p>
+                <p className="mt-1 text-xs leading-5 text-rose-200/75">{t("deleteGeofenceWarning")}</p>
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => setConfirmingDelete(false)}
+                    className="rounded-lg border border-white/[0.1] px-3 py-2 text-xs text-slate-200 transition hover:border-white/[0.2] disabled:opacity-50"
+                  >
+                    {t("keepGeofence")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => void deleteGeofence()}
+                    className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
+                  >
+                    {deleting ? t("deletingGeofence") : t("deleteGeofence")}
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              {canDelete && !confirmingDelete && (
+                <button
+                  type="button"
+                  disabled={saving || deleting}
+                  onClick={() => {
+                    setFormErr(null);
+                    setConfirmingDelete(true);
+                  }}
+                  className="rounded-xl border border-rose-400/35 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-200 transition hover:bg-rose-500/20 disabled:opacity-50"
+                >
+                  {t("deleteGeofence")}
+                </button>
+              )}
+              <div className="ml-auto flex gap-2">
               <button
                 type="button"
                 onClick={closeEdit}
+                disabled={deleting}
                 className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-2 text-sm text-slate-200 transition hover:border-white/[0.15]"
               >
                 {t("cancel")}
               </button>
               <button
                 type="button"
-                disabled={saving}
+                disabled={saving || deleting}
                 onClick={() => void submitEdit()}
                 className="rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-teal-500/20 transition hover:from-teal-400 hover:to-emerald-400 disabled:opacity-50"
               >
                 {saving ? t("saving") : t("save")}
               </button>
+              </div>
             </div>
           </div>
         </div>
