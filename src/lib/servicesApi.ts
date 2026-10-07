@@ -53,3 +53,45 @@ export async function servicesFetch<T>(
 
   return data as T;
 }
+
+/** Multipart upload (do not set Content-Type — browser sets boundary). */
+export async function servicesUploadFile<T = { imageUrl: string; url: string }>(
+  path: string,
+  file: File,
+  token?: string | null
+): Promise<T> {
+  const url = path.startsWith("http")
+    ? path
+    : `${getServicesApiBase()}${path.startsWith("/") ? path : `/${path}`}`;
+  const form = new FormData();
+  form.append("file", file);
+
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(url, { method: "POST", headers, body: form, cache: "no-store" });
+  const text = await res.text();
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!res.ok) {
+    const msg =
+      typeof data === "object" && data && "error" in data
+        ? String((data as { error: string }).error)
+        : res.statusText;
+    throw new ServicesApiError(msg || "Upload failed", res.status, data);
+  }
+
+  return data as T;
+}
+
+export function resolveServicesMediaUrl(pathOrUrl: string): string {
+  if (!pathOrUrl) return "";
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  const base = getServicesApiBase();
+  return pathOrUrl.startsWith("/") ? `${base}${pathOrUrl}` : `${base}/${pathOrUrl}`;
+}

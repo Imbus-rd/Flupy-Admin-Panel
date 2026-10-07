@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ServicesShell } from "@/components/ServicesShell";
 import { Snackbar } from "@/components/Snackbar";
-import { servicesFetch, ServicesApiError } from "@/lib/servicesApi";
+import {
+  servicesFetch,
+  servicesUploadFile,
+  resolveServicesMediaUrl,
+  ServicesApiError,
+} from "@/lib/servicesApi";
 import { useServicesAuth } from "@/lib/ServicesAuthProvider";
 
 type PlatformAdRow = {
@@ -132,6 +137,7 @@ export default function ServicesAdsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [snack, setSnack] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -222,6 +228,33 @@ export default function ServicesAdsPage() {
     }
   };
 
+  const handleImageFile = async (file: File | null) => {
+    if (!file || !token) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Solo imágenes JPG, PNG, GIF o WebP.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("La imagen no puede superar 5 MB.");
+      return;
+    }
+    setError("");
+    setUploadingImage(true);
+    try {
+      const data = await servicesUploadFile<{ imageUrl: string }>(
+        "/api/admin/ads/upload-image",
+        file,
+        token
+      );
+      setField("imageUrl", data.imageUrl);
+      setSnack("Imagen subida");
+    } catch (e) {
+      setError(e instanceof ServicesApiError ? e.message : "Error al subir imagen");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   const handleDeactivate = async (id: number) => {
     if (!token || !window.confirm("¿Desactivar esta campaña?")) return;
     try {
@@ -293,13 +326,53 @@ export default function ServicesAdsPage() {
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className={labelClass}>URL de imagen</label>
+                <label className={labelClass}>Imagen del banner</label>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                  <label
+                    className={`inline-flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-teal-400/40 bg-teal-500/10 px-4 py-3 text-sm font-semibold text-teal-200 transition hover:bg-teal-500/15 ${
+                      uploadingImage ? "pointer-events-none opacity-60" : ""
+                    }`}
+                  >
+                    {uploadingImage ? "Subiendo…" : "Subir imagen"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      className="sr-only"
+                      disabled={uploadingImage}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        void handleImageFile(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {form.imageUrl ? (
+                    <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={resolveServicesMediaUrl(form.imageUrl)}
+                        alt="Vista previa"
+                        className="h-20 w-32 shrink-0 rounded-lg border border-white/10 object-cover"
+                      />
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-red-400"
+                        onClick={() => setField("imageUrl", "")}
+                      >
+                        Quitar imagen
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">JPG, PNG, WebP o GIF — máx. 5 MB</p>
+                  )}
+                </div>
+                <label className={`${labelClass} mt-3`}>O URL de imagen (opcional)</label>
                 <input
                   className={inputClass}
-                  type="url"
+                  type="text"
                   value={form.imageUrl}
                   onChange={(e) => setField("imageUrl", e.target.value)}
-                  placeholder="https://... o /uploads/..."
+                  placeholder="https://... o /uploads/platform-ads/..."
                 />
               </div>
               <div>
