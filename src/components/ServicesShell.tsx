@@ -8,6 +8,7 @@ import { useServicesAuth } from "@/lib/ServicesAuthProvider";
 
 const nav = [
   { href: "/services/dashboard", label: "Resumen" },
+  { href: "/services/ads", label: "Anuncios" },
   { href: "/services/dashboard?tab=services", label: "Servicios" },
   { href: "/services/dashboard?tab=plans", label: "Planes" },
   { href: "/services/dashboard?tab=providers", label: "Proveedores" },
@@ -68,7 +69,10 @@ export function ServicesShell({ children }: { children: React.ReactNode }) {
                 <p className="mt-1 text-[11px] leading-relaxed text-slate-500">Servicios, proveedores, clientes, planes y ordenes.</p>
               </div>
               {nav.map((item) => {
-                const active = pathname === item.href.split("?")[0] && (item.href.includes("?") ? false : true);
+                const pathOnly = item.href.split("?")[0];
+                const active = item.href.includes("?")
+                  ? false
+                  : pathname === pathOnly || pathname.startsWith(`${pathOnly}/`);
                 return (
                   <Link
                     key={item.href}
