@@ -2,10 +2,18 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { ServiceIcon3DCatalog } from "@/components/ServiceIcon3DCatalog";
 import { ServicesShell } from "@/components/ServicesShell";
 import { Snackbar } from "@/components/Snackbar";
 import { servicesFetch, ServicesApiError } from "@/lib/servicesApi";
 import { useServicesAuth } from "@/lib/ServicesAuthProvider";
+import {
+  assetExistsForSlug,
+  isWebpServiceIconPath,
+  readableNameFromSlug,
+  resolveIconUrlForSubmit,
+  type ServiceIconAsset,
+} from "@/lib/serviceIconCatalog";
 
 type DashboardData = {
   summary: { total_users: number; total_customers: number; total_providers: number; active_users: number };
@@ -252,6 +260,8 @@ function ServicesDashboardContent() {
     sort_order: "10",
     is_regulated: false,
   });
+  const [iconAssets, setIconAssets] = useState<ServiceIconAsset[]>([]);
+  const [iconAssetsLoading, setIconAssetsLoading] = useState(false);
   const [planForm, setPlanForm] = useState({
     name: "",
     slug: "",
@@ -290,6 +300,12 @@ function ServicesDashboardContent() {
     clients.forEach((c) => merged.add(String(c.country || "").toUpperCase()));
     return Array.from(merged).filter(Boolean).sort();
   }, [providers, clients]);
+
+  const assetsBySlug = useMemo(() => {
+    const map = new Map<string, ServiceIconAsset>();
+    iconAssets.forEach((asset) => map.set(asset.slug.toLowerCase(), asset));
+    return map;
+  }, [iconAssets]);
 
   function openToast(message: string) {
     setToast({ open: false, message: "" });
@@ -363,18 +379,79 @@ function ServicesDashboardContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, servicesCountry]);
 
+  async function loadServiceIcons() {
+    if (!token) return;
+    setIconAssetsLoading(true);
+    try {
+      const res = await servicesFetch<{ icons: ServiceIconAsset[]; count: number }>(
+        "/api/admin/service-icons",
+        { token }
+      );
+      setIconAssets(res.icons || []);
+    } catch {
+      setIconAssets([]);
+    } finally {
+      setIconAssetsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (token && activeTab === "services") {
+      loadServiceIcons();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, activeTab]);
+
+  function selectCreateAsset(asset: ServiceIconAsset) {
+    setServiceForm((prev) => ({
+      ...prev,
+      icon_url: asset.icon,
+      slug: prev.slug.trim() ? prev.slug : asset.slug,
+      name: prev.name.trim() ? prev.name : readableNameFromSlug(asset.slug),
+    }));
+  }
+
+  function selectEditAsset(asset: ServiceIconAsset) {
+    setServiceEditForm((prev) => ({
+      ...prev,
+      icon_url: asset.icon,
+      slug: prev.slug.trim() ? prev.slug : asset.slug,
+      name: prev.name.trim() ? prev.name : readableNameFromSlug(asset.slug),
+    }));
+  }
+
+  function onCreateIconChange(value: string) {
+    if (value.trim() && /\.svg/i.test(value)) return;
+    setServiceForm((prev) => ({ ...prev, icon_url: value }));
+  }
+
+  function onEditIconChange(value: string) {
+    if (value.trim() && /\.svg/i.test(value)) return;
+    setServiceEditForm((prev) => ({ ...prev, icon_url: value }));
+  }
+
   async function createService(e: React.FormEvent) {
     e.preventDefault();
     if (!token) return;
     setSaving(true);
     setError(null);
     try {
+      const slug = serviceForm.slug.trim();
+      let icon_url: string | null;
+      try {
+        icon_url = resolveIconUrlForSubmit(slug, serviceForm.icon_url, assetsBySlug);
+      } catch (iconErr) {
+        setError(iconErr instanceof Error ? iconErr.message : "Icono inválido");
+        setSaving(false);
+        return;
+      }
       await servicesFetch("/api/admin/services", {
         token,
         method: "POST",
         body: JSON.stringify({
           ...serviceForm,
-          icon_url: serviceForm.icon_url.trim() || null,
+          slug,
+          icon_url,
           sort_order: Number(serviceForm.sort_order || 0),
           is_regulated: serviceForm.is_regulated ? 1 : 0,
         }),
@@ -429,14 +506,23 @@ function ServicesDashboardContent() {
     setSaving(true);
     setError(null);
     try {
+      const slug = serviceEditForm.slug.trim();
+      let icon_url: string | null;
+      try {
+        icon_url = resolveIconUrlForSubmit(slug, serviceEditForm.icon_url, assetsBySlug);
+      } catch (iconErr) {
+        setError(iconErr instanceof Error ? iconErr.message : "Icono inválido");
+        setSaving(false);
+        return;
+      }
       await servicesFetch(`/api/admin/services/${editingServiceId}`, {
         token,
         method: "PUT",
         body: JSON.stringify({
           name: serviceEditForm.name,
-          slug: serviceEditForm.slug,
+          slug,
           description: serviceEditForm.description || null,
-          icon_url: serviceEditForm.icon_url || null,
+          icon_url,
           country: serviceEditForm.country,
           sort_order: Number(serviceEditForm.sort_order || 0),
           is_active: serviceEditForm.is_active ? 1 : 0,
@@ -817,9 +903,12 @@ function ServicesDashboardContent() {
                   <Field
                     label="Icono (opcional)"
                     value={serviceForm.icon_url}
-                    onChange={(v) => setServiceForm({ ...serviceForm, icon_url: v })}
+                    onChange={onCreateIconChange}
                     placeholder="Vacío = asset 3D /uploads/service-icons/<slug>.webp"
                   />
+                  {serviceForm.icon_url.trim() && !isWebpServiceIconPath(serviceForm.icon_url) && (
+                    <p className="text-xs text-amber-200/90">Usa solo rutas WebP oficiales, no SVG.</p>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Pais" value={serviceForm.country} onChange={(v) => setServiceForm({ ...serviceForm, country: v })} />
                     <Field label="Orden" value={serviceForm.sort_order} onChange={(v) => setServiceForm({ ...serviceForm, sort_order: v })} type="number" />
@@ -841,6 +930,26 @@ function ServicesDashboardContent() {
                   <button disabled={saving} className="w-full rounded-xl bg-teal-400 px-4 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-60">
                     Crear servicio
                   </button>
+                  <ServiceIcon3DCatalog
+                    assets={iconAssets}
+                    loading={iconAssetsLoading}
+                    selectedIconPath={serviceForm.icon_url}
+                    slugForHint={serviceForm.slug}
+                    hasAssetForSlug={assetExistsForSlug(serviceForm.slug, assetsBySlug)}
+                    onSelect={selectCreateAsset}
+                  />
+                  {editingServiceId !== null && (
+                    <ServiceIcon3DCatalog
+                      title="Cambiar asset (edición)"
+                      compact
+                      assets={iconAssets}
+                      loading={iconAssetsLoading}
+                      selectedIconPath={serviceEditForm.icon_url}
+                      slugForHint={serviceEditForm.slug}
+                      hasAssetForSlug={assetExistsForSlug(serviceEditForm.slug, assetsBySlug)}
+                      onSelect={selectEditAsset}
+                    />
+                  )}
                 </form>
                 <div className="space-y-4">
                   <div className="ui-card flex flex-wrap items-end gap-3 rounded-2xl p-4">
@@ -901,7 +1010,7 @@ function ServicesDashboardContent() {
                                   </td>
                                   <td className="px-4 py-3">
                                     {editing ? (
-                                      <input value={serviceEditForm.icon_url} onChange={(e) => setServiceEditForm({ ...serviceEditForm, icon_url: e.target.value })} className="w-48 rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-sm text-white" />
+                                      <input value={serviceEditForm.icon_url} onChange={(e) => onEditIconChange(e.target.value)} className="w-48 rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-sm text-white" />
                                     ) : (s.icon_url || "-")}
                                   </td>
                                   <td className="px-4 py-3">
