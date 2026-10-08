@@ -24,6 +24,7 @@ type ServiceCategory = {
   icon_url: string | null;
   country: string;
   is_active: number;
+  is_regulated?: number;
   sort_order: number;
 };
 
@@ -239,6 +240,7 @@ function ServicesDashboardContent() {
     country: "DR",
     sort_order: "0",
     is_active: true,
+    is_regulated: false,
   });
 
   const [serviceForm, setServiceForm] = useState({
@@ -248,6 +250,7 @@ function ServicesDashboardContent() {
     icon_url: "",
     country: "DR",
     sort_order: "10",
+    is_regulated: false,
   });
   const [planForm, setPlanForm] = useState({
     name: "",
@@ -372,9 +375,18 @@ function ServicesDashboardContent() {
         body: JSON.stringify({
           ...serviceForm,
           sort_order: Number(serviceForm.sort_order || 0),
+          is_regulated: serviceForm.is_regulated ? 1 : 0,
         }),
       });
-      setServiceForm({ name: "", slug: "", description: "", icon_url: "", country: "DR", sort_order: "10" });
+      setServiceForm({
+        name: "",
+        slug: "",
+        description: "",
+        icon_url: "",
+        country: "DR",
+        sort_order: "10",
+        is_regulated: false,
+      });
       await loadAll();
     } catch (err) {
       setError(err instanceof ServicesApiError ? err.message : "No se pudo crear el servicio");
@@ -393,6 +405,7 @@ function ServicesDashboardContent() {
       country: service.country || "DR",
       sort_order: String(service.sort_order ?? 0),
       is_active: !!service.is_active,
+      is_regulated: !!service.is_regulated,
     });
   }
 
@@ -406,6 +419,7 @@ function ServicesDashboardContent() {
       country: "DR",
       sort_order: "0",
       is_active: true,
+      is_regulated: false,
     });
   }
 
@@ -425,6 +439,7 @@ function ServicesDashboardContent() {
           country: serviceEditForm.country,
           sort_order: Number(serviceEditForm.sort_order || 0),
           is_active: serviceEditForm.is_active ? 1 : 0,
+          is_regulated: serviceEditForm.is_regulated ? 1 : 0,
         }),
       });
       cancelServiceEdit();
@@ -798,6 +813,20 @@ function ServicesDashboardContent() {
                     <Field label="Pais" value={serviceForm.country} onChange={(v) => setServiceForm({ ...serviceForm, country: v })} />
                     <Field label="Orden" value={serviceForm.sort_order} onChange={(v) => setServiceForm({ ...serviceForm, sort_order: v })} type="number" />
                   </div>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={serviceForm.is_regulated}
+                      onChange={(e) => setServiceForm({ ...serviceForm, is_regulated: e.target.checked })}
+                      className="mt-0.5 h-4 w-4 rounded border-white/20 accent-teal-400"
+                    />
+                    <span className="text-sm leading-snug text-slate-300">
+                      <span className="font-medium text-white">Servicio regulado</span>
+                      <span className="mt-1 block text-xs text-slate-500">
+                        Requiere colegiatura, exequatur o registro profesional al proveedor.
+                      </span>
+                    </span>
+                  </label>
                   <button disabled={saving} className="w-full rounded-xl bg-teal-400 px-4 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-60">
                     Crear servicio
                   </button>
@@ -832,6 +861,7 @@ function ServicesDashboardContent() {
                             <th className="px-4 py-3 font-semibold">Icono</th>
                             <th className="px-4 py-3 font-semibold">Pais</th>
                             <th className="px-4 py-3 font-semibold">Activo</th>
+                            <th className="px-4 py-3 font-semibold">Regulado</th>
                             <th className="px-4 py-3 font-semibold">Orden</th>
                             <th className="px-4 py-3 font-semibold">Acciones</th>
                           </tr>
@@ -839,7 +869,7 @@ function ServicesDashboardContent() {
                         <tbody className="divide-y divide-white/[0.06]">
                           {services.length === 0 ? (
                             <tr>
-                              <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                              <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                                 Sin servicios para {servicesCountry}
                               </td>
                             </tr>
@@ -879,6 +909,24 @@ function ServicesDashboardContent() {
                                         <option value="0">No</option>
                                       </select>
                                     ) : (s.is_active ? "Si" : "No")}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {editing ? (
+                                      <select
+                                        value={serviceEditForm.is_regulated ? "1" : "0"}
+                                        onChange={(e) => setServiceEditForm({ ...serviceEditForm, is_regulated: e.target.value === "1" })}
+                                        className="rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-sm text-white"
+                                      >
+                                        <option value="1">Si</option>
+                                        <option value="0">No</option>
+                                      </select>
+                                    ) : (
+                                      s.is_regulated ? (
+                                        <span className="rounded-md bg-amber-400/15 px-2 py-0.5 text-xs font-semibold text-amber-200">Si</span>
+                                      ) : (
+                                        <span className="text-slate-500">No</span>
+                                      )
+                                    )}
                                   </td>
                                   <td className="px-4 py-3">
                                     {editing ? (
