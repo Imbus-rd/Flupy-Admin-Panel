@@ -807,7 +807,12 @@ function ServicesDashboardContent() {
                 <form onSubmit={createService} className="ui-card h-fit space-y-3 rounded-2xl p-5">
                   <h2 className="text-base font-semibold text-white">Crear servicio</h2>
                   <Field label="Nombre" value={serviceForm.name} onChange={(v) => setServiceForm({ ...serviceForm, name: v })} />
-                  <Field label="Slug" value={serviceForm.slug} onChange={(v) => setServiceForm({ ...serviceForm, slug: v })} placeholder="electricity" />
+                  <Field
+                    label="Slug"
+                    value={serviceForm.slug}
+                    onChange={(v) => setServiceForm({ ...serviceForm, slug: v })}
+                    placeholder="ej. fisioterapia (kebab-case; coincide con el .webp)"
+                  />
                   <Field label="Descripcion" value={serviceForm.description} onChange={(v) => setServiceForm({ ...serviceForm, description: v })} />
                   <Field
                     label="Icono (opcional)"
