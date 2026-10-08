@@ -374,6 +374,7 @@ function ServicesDashboardContent() {
         method: "POST",
         body: JSON.stringify({
           ...serviceForm,
+          icon_url: serviceForm.icon_url.trim() || null,
           sort_order: Number(serviceForm.sort_order || 0),
           is_regulated: serviceForm.is_regulated ? 1 : 0,
         }),
@@ -808,7 +809,12 @@ function ServicesDashboardContent() {
                   <Field label="Nombre" value={serviceForm.name} onChange={(v) => setServiceForm({ ...serviceForm, name: v })} />
                   <Field label="Slug" value={serviceForm.slug} onChange={(v) => setServiceForm({ ...serviceForm, slug: v })} placeholder="electricity" />
                   <Field label="Descripcion" value={serviceForm.description} onChange={(v) => setServiceForm({ ...serviceForm, description: v })} />
-                  <Field label="Icono" value={serviceForm.icon_url} onChange={(v) => setServiceForm({ ...serviceForm, icon_url: v })} placeholder="electricity.png" />
+                  <Field
+                    label="Icono (opcional)"
+                    value={serviceForm.icon_url}
+                    onChange={(v) => setServiceForm({ ...serviceForm, icon_url: v })}
+                    placeholder="Vacío = asset 3D /uploads/service-icons/<slug>.webp"
+                  />
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Pais" value={serviceForm.country} onChange={(v) => setServiceForm({ ...serviceForm, country: v })} />
                     <Field label="Orden" value={serviceForm.sort_order} onChange={(v) => setServiceForm({ ...serviceForm, sort_order: v })} type="number" />
