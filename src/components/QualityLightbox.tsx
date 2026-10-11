@@ -73,6 +73,7 @@ type Props = {
     comment?: string | null
   ) => Promise<boolean>;
   busy?: boolean;
+  readOnly?: boolean;
 };
 
 function decisionBadge(t: (k: string) => string, d: string | undefined) {
@@ -93,7 +94,8 @@ export function QualityLightbox({
   onClose,
   onIndexChange,
   onPhotoDecision,
-  busy
+  busy,
+  readOnly = false
 }: Props) {
   const { t } = useI18n();
   const [scale, setScale] = useState(1);
@@ -390,11 +392,13 @@ export function QualityLightbox({
         {t("fullscreenHint")}
       </p>
 
-      <p className="border-t border-white/5 px-4 py-1.5 text-center text-[11px] text-slate-500">
-        {t("qualityPerPhotoHint")}
-      </p>
+      {!readOnly && (
+        <p className="border-t border-white/5 px-4 py-1.5 text-center text-[11px] text-slate-500">
+          {t("qualityPerPhotoHint")}
+        </p>
+      )}
 
-      <div className="border-t border-white/[0.08] bg-black/40 px-4 py-3">
+      {!readOnly && <div className="border-t border-white/[0.08] bg-black/40 px-4 py-3">
         <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400" htmlFor="quality-inspector-comment">
           {t("qualityInspectorCommentLabel")}
         </label>
@@ -412,9 +416,9 @@ export function QualityLightbox({
         />
         <p className="mt-1.5 text-[11px] text-slate-500">{t("qualityInspectorCommentHint")}</p>
         {commentError && <p className="mt-2 text-xs text-rose-400">{commentError}</p>}
-      </div>
+      </div>}
 
-      <div className="flex flex-wrap items-center justify-center gap-2 border-t border-white/[0.08] bg-black/35 px-4 py-3 backdrop-blur-md">
+      {!readOnly && <div className="flex flex-wrap items-center justify-center gap-2 border-t border-white/[0.08] bg-black/35 px-4 py-3 backdrop-blur-md">
         <button
           type="button"
           disabled={busy}
@@ -439,7 +443,7 @@ export function QualityLightbox({
         >
           {t("actionOk")}
         </button>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -76,6 +76,7 @@ function buildQualityQuery(
 export default function QualityPage() {
   const { t, locale } = useI18n();
   const { token, employee: authEmployee } = useAuth();
+  const readOnly = authEmployee?.role === "SUPERVISOR";
   const [items, setItems] = useState<QItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [employees, setEmployees] = useState<EmpOption[]>([]);
@@ -540,6 +541,7 @@ export default function QualityPage() {
           onClose={() => setLightbox(null)}
           onIndexChange={(i) => setLightbox((s) => (s ? { ...s, index: i } : s))}
           onPhotoDecision={onPhotoDecision}
+          readOnly={readOnly}
           busy={busy}
         />
       )}

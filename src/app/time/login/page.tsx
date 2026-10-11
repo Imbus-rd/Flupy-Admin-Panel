@@ -56,7 +56,8 @@ function LoginForm() {
         ...data.employee,
         companyName: data.employee.companyName
       });
-      router.push(nextPath.startsWith("/") ? nextPath : "/time/dashboard");
+      const roleHome = data.employee.role === "WAREHOUSE" ? "/time/warehouse" : "/time/dashboard";
+      router.push(nextPath.startsWith("/") && nextPath !== "/time/dashboard" ? nextPath : roleHome);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("invalidCredentials"));
     } finally {

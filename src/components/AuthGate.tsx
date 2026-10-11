@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { token, ready } = useAuth();
+  const { token, employee, ready } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const { t } = useI18n();
@@ -18,6 +18,17 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       router.replace(`/time/login?next=${next}`);
     }
   }, [ready, token, router, pathname]);
+
+  useEffect(() => {
+    if (!ready || !token || !employee) return;
+    if (employee.role === "WAREHOUSE" && !pathname.startsWith("/time/warehouse")) {
+      router.replace("/time/warehouse");
+    }
+    if (employee.role === "SUPERVISOR") {
+      const allowed = ["/time/dashboard", "/time/attendance", "/time/quality", "/time/reports", "/time/profile"];
+      if (!allowed.some((prefix) => pathname.startsWith(prefix))) router.replace("/time/dashboard");
+    }
+  }, [ready, token, employee, pathname, router]);
 
   if (!ready || !token) {
     return (

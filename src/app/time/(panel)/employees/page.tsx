@@ -31,7 +31,7 @@ type EmpDetail = {
 
 type GfOpt = { geofenceKey: string; officeName: string };
 
-const ROLES = ["EMPLOYEE", "SUPERVISOR", "INSPECTOR", "ADMIN"] as const;
+const ROLES = ["EMPLOYEE", "SUPERVISOR", "INSPECTOR", "WAREHOUSE", "ADMIN"] as const;
 const TYPES = ["CENTRALIZED", "DECENTRALIZED"] as const;
 
 function roleLabel(t: (k: string) => string, role: string) {
@@ -39,6 +39,7 @@ function roleLabel(t: (k: string) => string, role: string) {
     EMPLOYEE: t("roleEMPLOYEE"),
     SUPERVISOR: t("roleSUPERVISOR"),
     INSPECTOR: t("roleINSPECTOR"),
+    WAREHOUSE: t("roleWAREHOUSE"),
     ADMIN: t("roleADMIN")
   };
   return m[role] || role;
@@ -52,6 +53,18 @@ export default function EmployeesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
   const [geofences, setGeofences] = useState<GfOpt[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    employeeCode: "",
+    fullName: "",
+    email: "",
+    password: "",
+    role: "WAREHOUSE",
+    employeeType: "CENTRALIZED",
+    geofenceKey: "",
+    supervisorId: "",
+    region: ""
+  });
   const [editId, setEditId] = useState<string | null>(null);
   const [detail, setDetail] = useState<EmpDetail | null>(null);
   const [loadDetailErr, setLoadDetailErr] = useState<string | null>(null);
@@ -138,6 +151,72 @@ export default function EmployeesPage() {
     setSaveMsg(null);
   }, []);
 
+  const openCreate = useCallback(async () => {
+    if (!token) return;
+    setSaveMsg(null);
+    try {
+      const data = await apiFetch<{ items: GfOpt[] }>("/geofences", { token });
+      setGeofences(data.items || []);
+      setCreateForm({
+        employeeCode: "",
+        fullName: "",
+        email: "",
+        password: "",
+        role: "WAREHOUSE",
+        employeeType: "CENTRALIZED",
+        geofenceKey: data.items?.[0]?.geofenceKey || "",
+        supervisorId: "",
+        region: ""
+      });
+      setCreateOpen(true);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : t("errorLoad"));
+    }
+  }, [token, t]);
+
+  const submitCreate = useCallback(async () => {
+    if (!token || !authEmployee?.companyId) return;
+    if (!createForm.employeeCode.trim() || !createForm.fullName.trim() || !createForm.password.trim() || !createForm.geofenceKey) {
+      setSaveMsg(t("employeeCreateRequired"));
+      return;
+    }
+    if (createForm.password.trim().length < 6) {
+      setSaveMsg(t("passwordMin6"));
+      return;
+    }
+    if (createForm.role === "EMPLOYEE" && !createForm.supervisorId) {
+      setSaveMsg(t("selectSupervisor"));
+      return;
+    }
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      await apiFetch("/employees", {
+        method: "POST",
+        token,
+        body: JSON.stringify({
+          employeeCode: createForm.employeeCode.trim(),
+          fullName: createForm.fullName.trim(),
+          email: createForm.email.trim() || null,
+          password: createForm.password,
+          companyId: authEmployee.companyId,
+          role: createForm.role,
+          employeeType: createForm.employeeType,
+          geofenceKey: createForm.geofenceKey,
+          supervisorId: createForm.role === "EMPLOYEE" ? createForm.supervisorId : null,
+          isSupervisor: createForm.role === "SUPERVISOR",
+          region: createForm.region || null
+        })
+      });
+      setCreateOpen(false);
+      await load();
+    } catch (e) {
+      setSaveMsg(e instanceof ApiError ? e.message : t("errorLoad"));
+    } finally {
+      setSaving(false);
+    }
+  }, [token, authEmployee?.companyId, createForm, t, load]);
+
   const submitEdit = useCallback(async () => {
     if (!token || !editId || !form.fullName.trim()) return;
     const pw = form.password.trim();
@@ -198,13 +277,24 @@ export default function EmployeesPage() {
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={load}
-          className="self-start rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-2 text-sm text-slate-200 backdrop-blur-sm transition hover:border-teal-400/30"
-        >
-          {t("retry")}
-        </button>
+        <div className="flex gap-2">
+          {authEmployee?.role === "ADMIN" && (
+            <button
+              type="button"
+              onClick={() => void openCreate()}
+              className="self-start rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-teal-500/20 transition hover:from-teal-400 hover:to-emerald-400"
+            >
+              {t("newEmployee")}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={load}
+            className="self-start rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-2 text-sm text-slate-200 backdrop-blur-sm transition hover:border-teal-400/30"
+          >
+            {t("retry")}
+          </button>
+        </div>
       </div>
       {err && <p className="text-sm text-rose-400">{err}</p>}
 
@@ -285,6 +375,27 @@ export default function EmployeesPage() {
           </tbody>
         </table>
       </div>
+
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 p-4 backdrop-blur-sm sm:items-center" role="dialog" aria-modal aria-labelledby="emp-create-title">
+          <div className="ui-modal max-h-[90vh] w-full max-w-lg overflow-y-auto p-5 scrollbar-thin">
+            <h2 id="emp-create-title" className="text-lg font-semibold text-white">{t("newEmployee")}</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div><label className="text-xs font-medium text-slate-400">{t("employeeCode")}</label><input className={inputClass} value={createForm.employeeCode} onChange={(e) => setCreateForm((f) => ({ ...f, employeeCode: e.target.value }))} /></div>
+              <div><label className="text-xs font-medium text-slate-400">{t("name")}</label><input className={inputClass} value={createForm.fullName} onChange={(e) => setCreateForm((f) => ({ ...f, fullName: e.target.value }))} /></div>
+              <div><label className="text-xs font-medium text-slate-400">{t("email")}</label><input type="email" className={inputClass} value={createForm.email} onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))} /></div>
+              <div><label className="text-xs font-medium text-slate-400">{t("initialPassword")}</label><input type="password" className={inputClass} value={createForm.password} onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))} /></div>
+              <div><label className="text-xs font-medium text-slate-400">{t("role")}</label><select className={inputClass} value={createForm.role} onChange={(e) => setCreateForm((f) => ({ ...f, role: e.target.value }))}>{ROLES.map((r) => <option key={r} value={r}>{roleLabel(t, r)}</option>)}</select></div>
+              <div><label className="text-xs font-medium text-slate-400">{t("employeesRegion")}</label><select className={inputClass} value={createForm.region} onChange={(e) => setCreateForm((f) => ({ ...f, region: e.target.value }))}><option value="">{t("employeeRegionNone")}</option>{EMPLOYEE_REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}</select></div>
+              <div><label className="text-xs font-medium text-slate-400">{t("employeeTypeLabel")}</label><select className={inputClass} value={createForm.employeeType} onChange={(e) => setCreateForm((f) => ({ ...f, employeeType: e.target.value }))}>{TYPES.map((ty) => <option key={ty} value={ty}>{ty === "CENTRALIZED" ? t("typeCentralized") : t("typeDecentralized")}</option>)}</select></div>
+              <div><label className="text-xs font-medium text-slate-400">{t("geofenceAssign")}</label><select className={inputClass} value={createForm.geofenceKey} onChange={(e) => setCreateForm((f) => ({ ...f, geofenceKey: e.target.value }))}><option value="">{t("selectGeofence")}</option>{geofences.map((g) => <option key={g.geofenceKey} value={g.geofenceKey}>{g.officeName} · {g.geofenceKey}</option>)}</select></div>
+              {createForm.role === "EMPLOYEE" && <div className="sm:col-span-2"><label className="text-xs font-medium text-slate-400">{t("supervisor")}</label><select className={inputClass} value={createForm.supervisorId} onChange={(e) => setCreateForm((f) => ({ ...f, supervisorId: e.target.value }))}><option value="">{t("selectSupervisor")}</option>{supervisors.map((s) => <option key={s.id} value={s.id}>{s.fullName} ({s.employeeCode})</option>)}</select></div>}
+            </div>
+            {saveMsg && <p className="mt-3 text-sm text-amber-200">{saveMsg}</p>}
+            <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => { setCreateOpen(false); setSaveMsg(null); }} className="rounded-xl border border-white/[0.1] px-4 py-2 text-sm">{t("cancel")}</button><button type="button" onClick={() => void submitCreate()} disabled={saving} className="rounded-xl bg-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40">{saving ? t("saving") : t("createEmployee")}</button></div>
+          </div>
+        </div>
+      )}
 
       {editId && (
         <div

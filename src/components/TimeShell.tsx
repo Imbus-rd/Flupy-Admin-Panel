@@ -14,13 +14,29 @@ const nav = [
   { href: "/time/quality", key: "navQuality" },
   { href: "/time/geofences", key: "navGeofences" },
   { href: "/time/reports", key: "navReports" },
+  { href: "/time/warehouse", key: "navWarehouse" },
   { href: "/time/profile", key: "navProfile" }
 ];
+
+const supervisorPaths = new Set([
+  "/time/dashboard",
+  "/time/attendance",
+  "/time/quality",
+  "/time/reports",
+  "/time/profile"
+]);
+
+const warehousePaths = new Set(["/time/warehouse"]);
 
 export function TimeShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { t } = useI18n();
-  const { logout } = useAuth();
+  const { logout, employee } = useAuth();
+  const visibleNav = nav.filter((item) => {
+    if (employee?.role === "WAREHOUSE") return warehousePaths.has(item.href);
+    if (employee?.role === "SUPERVISOR") return supervisorPaths.has(item.href);
+    return item.href !== "/time/warehouse" || employee?.role === "ADMIN";
+  });
 
   return (
     <div className="min-h-screen text-slate-100">
@@ -68,7 +84,7 @@ export function TimeShell({ children }: { children: React.ReactNode }) {
                 </div>
                 <LangSwitch className="shrink-0 lg:hidden" />
               </div>
-              {nav.map((item) => {
+              {visibleNav.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
                   <Link

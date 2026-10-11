@@ -254,12 +254,14 @@ export default function DashboardPage() {
           >
             {t("retry")}
           </button>
-          <button
-            type="button"
-            className="rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-teal-500/25 transition hover:from-teal-400 hover:to-emerald-400"
-          >
-            {t("newAction")}
-          </button>
+          {authEmployee?.role === "ADMIN" && (
+            <button
+              type="button"
+              className="rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-teal-500/25 transition hover:from-teal-400 hover:to-emerald-400"
+            >
+              {t("newAction")}
+            </button>
+          )}
         </div>
       </div>
 
