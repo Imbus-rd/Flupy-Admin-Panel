@@ -15,11 +15,14 @@ type SerialRow = {
   registeredEquipmentType?: string | null;
   importedEquipmentType?: string | null;
   orderId?: string | null;
+  orderLatitude?: number | null;
+  orderLongitude?: number | null;
   workType?: string | null;
   employeeCode?: string | null;
   employeeName?: string | null;
   region?: string | null;
   supervisorId?: string | null;
+  supervisorCode?: string | null;
   supervisorName?: string | null;
   capturedAt?: string | null;
   serialMethod?: string | null;
@@ -120,11 +123,25 @@ export default function WarehousePage() {
     } finally { setBusy(false); }
   }, [token, t]);
 
+  const loadOptions = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await apiFetch<Options>("/warehouse/options", { token });
+      setOptions(data);
+    } catch {
+      setOptions({ regions: [], equipmentTypes: [], supervisors: [], workTypes: [] });
+    }
+  }, [token]);
+
+  const refresh = useCallback(async () => {
+    await Promise.all([loadOptions(), load(filters)]);
+  }, [filters, load, loadOptions]);
+
   useEffect(() => {
     if (!token) return;
-    void apiFetch<Options>("/warehouse/options", { token }).then(setOptions).catch(() => setOptions({ regions: [], equipmentTypes: [], supervisors: [], workTypes: [] }));
+    void loadOptions();
     void load(emptyFilters);
-  }, [token, load]);
+  }, [token, load, loadOptions]);
 
   useEffect(() => () => { if (imageUrl) URL.revokeObjectURL(imageUrl); }, [imageUrl]);
 
@@ -189,6 +206,7 @@ export default function WarehousePage() {
       { header: t("warehouseSerial"), key: "serial", width: 24 },
       { header: t("warehouseEquipmentType"), key: "equipment", width: 22 },
       { header: t("order"), key: "order", width: 18 },
+      { header: t("warehouseCoordinates"), key: "coordinates", width: 26 },
       { header: t("workType"), key: "work", width: 30 },
       { header: t("employeeCode"), key: "employee", width: 18 },
       { header: t("employeesRegion"), key: "region", width: 18 },
@@ -199,12 +217,18 @@ export default function WarehousePage() {
     rows.forEach((row) => sheet.addRow({
       status: t(`warehouseStatus${row.comparisonStatus}`), serial: row.serialNumber,
       equipment: row.equipmentType, order: row.orderId || "", work: row.workType || "",
-      employee: row.employeeCode || "", region: row.region || "", supervisor: row.supervisorName || "",
+      coordinates: row.orderLatitude != null && row.orderLongitude != null
+        ? `${row.orderLatitude}, ${row.orderLongitude}`
+        : "",
+      employee: row.employeeCode || "", region: row.region || "",
+      supervisor: row.supervisorName
+        ? `${row.supervisorName}${row.supervisorCode ? ` (${row.supervisorCode})` : ""}`
+        : "",
       date: row.capturedAt ? new Date(row.capturedAt).toLocaleString(locale) : "",
       image: row.imageAvailable ? t("warehouseImageAvailable") : t("warehouseImageUnavailable")
     }));
     sheet.getRow(1).font = { bold: true };
-    sheet.autoFilter = { from: "A1", to: `J${Math.max(1, rows.length + 1)}` };
+    sheet.autoFilter = { from: "A1", to: `K${Math.max(1, rows.length + 1)}` };
     const buffer = await workbook.xlsx.writeBuffer();
     const url = URL.createObjectURL(new Blob([buffer as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = `flupy-series-${new Date().toISOString().slice(0, 10)}.xlsx`; anchor.click(); URL.revokeObjectURL(url);
@@ -225,6 +249,7 @@ export default function WarehousePage() {
     <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div><h1 className="text-2xl font-bold text-white">{t("warehouseTitle")}</h1><p className="mt-1 text-sm text-slate-400">{t("warehouseSubtitle")}</p></div>
       <div className="flex gap-2">
+        <button onClick={() => void refresh()} disabled={busy} className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-200 hover:border-teal-400/30 disabled:opacity-40">{busy ? t("loading") : t("warehouseRefresh")}</button>
         <button onClick={() => setImportOpen(true)} className="rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-teal-400">{t("warehouseImport")}</button>
         <button onClick={() => void exportExcel()} disabled={!rows.length} className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-200 hover:border-teal-400/30 disabled:opacity-40">{t("warehouseExport")}</button>
       </div>
@@ -252,8 +277,8 @@ export default function WarehousePage() {
     </section>
 
     <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
-      <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-white/[0.04] text-xs uppercase text-slate-500"><tr>{["warehouseComparison", "warehouseSerial", "warehouseEquipmentType", "order", "workType", "employeeCode", "employeesRegion", "supervisor", "date", "photos"].map((key) => <th key={key} className="px-3 py-3">{t(key)}</th>)}</tr></thead>
-      <tbody className="divide-y divide-white/[0.06]">{rows.map((row) => <tr key={row.id} className="hover:bg-white/[0.025]"><td className="px-3 py-3"><span className="whitespace-nowrap rounded-full bg-white/[0.06] px-2 py-1 text-xs">{t(`warehouseStatus${row.comparisonStatus}`)}</span></td><td className="px-3 py-3 font-mono text-teal-200">{row.serialNumber}</td><td className="px-3 py-3">{row.equipmentType}</td><td className="px-3 py-3">{row.orderId || "—"}</td><td className="px-3 py-3">{row.workType || "—"}</td><td className="px-3 py-3">{row.employeeCode || "—"}</td><td className="px-3 py-3">{row.region || "—"}</td><td className="px-3 py-3">{row.supervisorName || "—"}</td><td className="whitespace-nowrap px-3 py-3">{row.capturedAt ? new Date(row.capturedAt).toLocaleString(locale) : "—"}</td><td className="px-3 py-3">{row.photoId ? <button onClick={() => void openImage(row)} className="text-teal-300 hover:text-teal-200">{row.imageAvailable ? t("openImage") : t("warehouseImageUnavailable")}</button> : <span className="text-slate-600">{t("warehouseImageUnavailable")}</span>}</td></tr>)}</tbody></table></div>
+      <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-white/[0.04] text-xs uppercase text-slate-500"><tr>{["warehouseComparison", "warehouseSerial", "warehouseEquipmentType", "order", "warehouseCoordinates", "workType", "employeeCode", "employeesRegion", "supervisor", "date", "photos"].map((key) => <th key={key} className="px-3 py-3">{t(key)}</th>)}</tr></thead>
+      <tbody className="divide-y divide-white/[0.06]">{rows.map((row) => <tr key={row.id} className="hover:bg-white/[0.025]"><td className="px-3 py-3"><span className="whitespace-nowrap rounded-full bg-white/[0.06] px-2 py-1 text-xs">{t(`warehouseStatus${row.comparisonStatus}`)}</span></td><td className="px-3 py-3 font-mono text-teal-200">{row.serialNumber}</td><td className="px-3 py-3">{row.equipmentType}</td><td className="px-3 py-3">{row.orderId || "—"}</td><td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-slate-300">{row.orderLatitude != null && row.orderLongitude != null ? `${row.orderLatitude}, ${row.orderLongitude}` : "—"}</td><td className="px-3 py-3">{row.workType || "—"}</td><td className="px-3 py-3">{row.employeeCode || "—"}</td><td className="px-3 py-3">{row.region || "—"}</td><td className="px-3 py-3">{row.supervisorName ? `${row.supervisorName}${row.supervisorCode ? ` (${row.supervisorCode})` : ""}` : "—"}</td><td className="whitespace-nowrap px-3 py-3">{row.capturedAt ? new Date(row.capturedAt).toLocaleString(locale) : "—"}</td><td className="px-3 py-3">{row.photoId ? <button onClick={() => void openImage(row)} className="text-teal-300 hover:text-teal-200">{row.imageAvailable ? t("openImage") : t("warehouseImageUnavailable")}</button> : <span className="text-slate-600">{t("warehouseImageUnavailable")}</span>}</td></tr>)}</tbody></table></div>
       {!rows.length && <p className="p-8 text-center text-sm text-slate-500">{busy ? t("loading") : t("noData")}</p>}
     </section>
 
