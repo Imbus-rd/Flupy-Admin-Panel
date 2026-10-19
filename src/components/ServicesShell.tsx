@@ -8,6 +8,7 @@ import { useServicesAuth } from "@/lib/ServicesAuthProvider";
 
 const nav = [
   { href: "/services/dashboard", label: "Resumen" },
+  { href: "/services/legal", label: "Legal" },
   { href: "/services/ads", label: "Anuncios" },
   { href: "/services/dashboard?tab=services", label: "Servicios" },
   { href: "/services/dashboard?tab=plans", label: "Planes" },
