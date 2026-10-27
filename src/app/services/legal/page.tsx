@@ -29,6 +29,19 @@ type AcceptanceRow = {
   accepted_at: string;
 };
 
+type RegistrationSanity = {
+  ok: boolean;
+  unified_version: string | null;
+  required_slugs: string[];
+  documents: LegalDoc[];
+  issues: Array<{
+    code: string;
+    slug?: string;
+    message: string;
+    versions?: Array<{ slug: string; version: string | null }>;
+  }>;
+};
+
 const DOC_META: Array<{ slug: string; label: string; sitePath: string }> = [
   { slug: "terms_and_conditions", label: "Términos y condiciones", sitePath: "/terms" },
   { slug: "use_policy", label: "Políticas de uso", sitePath: "/use-policy" },
@@ -60,11 +73,24 @@ export default function ServicesLegalPage() {
   const [acceptances, setAcceptances] = useState<AcceptanceRow[]>([]);
   const [acceptancesLoading, setAcceptancesLoading] = useState(false);
   const [userFilter, setUserFilter] = useState("");
+  const [registrationSanity, setRegistrationSanity] = useState<RegistrationSanity | null>(null);
 
   const activeMeta = useMemo(
     () => DOC_META.find((d) => d.slug === activeSlug) ?? DOC_META[0],
     [activeSlug],
   );
+
+  const loadRegistrationSanity = useCallback(async () => {
+    if (!token) return;
+    try {
+      const report = await servicesFetch<RegistrationSanity>("/api/admin/legal/registration-sanity", {
+        token,
+      });
+      setRegistrationSanity(report);
+    } catch {
+      setRegistrationSanity(null);
+    }
+  }, [token]);
 
   const loadDocs = useCallback(async () => {
     if (!token) return;
@@ -75,12 +101,13 @@ export default function ServicesLegalPage() {
       const map: Record<string, LegalDoc> = {};
       for (const row of rows) map[row.slug] = row;
       setDocs(map);
+      await loadRegistrationSanity();
     } catch (e) {
       setError(errMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, loadRegistrationSanity]);
 
   const loadAcceptances = useCallback(async () => {
     if (!token) return;
@@ -133,6 +160,7 @@ export default function ServicesLegalPage() {
       });
       setDocs((prev) => ({ ...prev, [activeSlug]: saved }));
       setMessage("Documento guardado. La versión anterior quedó en el historial de revisiones.");
+      await loadRegistrationSanity();
     } catch (e) {
       setError(errMessage(e));
     } finally {
@@ -210,6 +238,32 @@ export default function ServicesLegalPage() {
             Administra textos legales del sitio flupy.io y consulta aceptaciones registradas al crear cuenta en la app.
           </p>
         </div>
+
+        {registrationSanity && (
+          <div
+            className={`rounded-xl border px-4 py-3 text-sm ${
+              registrationSanity.ok
+                ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-100"
+                : "border-amber-500/40 bg-amber-500/10 text-amber-100"
+            }`}
+          >
+            {registrationSanity.ok ? (
+              <p>
+                Registro en app: los 3 documentos obligatorios están publicados con versión unificada{" "}
+                <strong className="font-semibold">{registrationSanity.unified_version}</strong>.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                <p className="font-medium">Revisa la configuración legal antes de publicar cambios en la app:</p>
+                <ul className="list-disc pl-5">
+                  {registrationSanity.issues.map((issue, idx) => (
+                    <li key={`${issue.code}-${issue.slug ?? idx}`}>{issue.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <button
