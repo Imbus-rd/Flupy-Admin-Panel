@@ -12,6 +12,7 @@ const nav = [
   { href: "/time/employees", key: "navEmployees" },
   { href: "/time/attendance", key: "navAttendance" },
   { href: "/time/quality", key: "navQuality" },
+  { href: "/time/inspections", key: "navInspections" },
   { href: "/time/geofences", key: "navGeofences" },
   { href: "/time/reports", key: "navReports" },
   { href: "/time/warehouse", key: "navWarehouse" },
@@ -22,6 +23,7 @@ const supervisorPaths = new Set([
   "/time/dashboard",
   "/time/attendance",
   "/time/quality",
+  "/time/inspections",
   "/time/reports",
   "/time/profile"
 ]);
