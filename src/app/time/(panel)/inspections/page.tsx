@@ -232,6 +232,28 @@ export default function InspectionsPage() {
     URL.revokeObjectURL(url);
   }
 
+  function formatAnswer(answer: InspectionDetail["groups"][number]["answers"][number]) {
+    if (answer.valueBoolean != null) {
+      return answer.valueBoolean ? t("inspectionComplies") : t("inspectionDoesNotComply");
+    }
+    if (answer.valueNumber != null) {
+      return answer.criterionKey.endsWith("_minutes")
+        ? t("inspectionMinutesValue", { value: answer.valueNumber })
+        : String(answer.valueNumber);
+    }
+    if (answer.criterionKey === "limitations" && answer.valueText) {
+      try {
+        const values = JSON.parse(answer.valueText);
+        if (Array.isArray(values)) {
+          return values.map((value) => t(`inspectionLimitation${String(value)}`)).join(", ");
+        }
+      } catch {
+        return answer.valueText;
+      }
+    }
+    return answer.valueText || "—";
+  }
+
   const field = "min-h-[42px] w-full rounded-lg border border-white/[0.1] bg-[rgba(3,6,14,0.7)] px-3 py-2 text-sm text-white outline-none focus:border-teal-400/40";
   const cards = [
     ["inspectionTotal", summary.total, "text-white"],
@@ -270,8 +292,8 @@ export default function InspectionsPage() {
         <select className={field} value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="">{t("inspectionAllStatuses")}</option>{options.statuses.map((status) => <option key={status} value={status}>{t(`inspectionStatus${status}`)}</option>)}</select>
       </div>
       <div className="mt-4 flex gap-2">
-        <button onClick={() => void load(filters)} className="rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-teal-400">{t("applyFilters")}</button>
-        <button onClick={() => { setFilters(emptyFilters); void load(emptyFilters); }} className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-200 hover:border-teal-400/30">{t("clearFilters")}</button>
+        <button onClick={() => void load(filters)} className="rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-teal-400">{t("filterApply")}</button>
+        <button onClick={() => { setFilters(emptyFilters); void load(emptyFilters); }} className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-200 hover:border-teal-400/30">{t("filterClear")}</button>
       </div>
     </section>
 
@@ -302,20 +324,20 @@ export default function InspectionsPage() {
       </div>
     </section>
 
-    {detail && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setDetail(null)}>
-      <div className="ui-card max-h-[92vh] w-full max-w-6xl overflow-y-auto p-5" onClick={(event) => event.stopPropagation()}>
+    {detail && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4" onClick={() => setDetail(null)}>
+      <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-xl border border-white/[0.12] bg-[#070b13] p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">{t("inspectionDetailTitle")}</h2><p className="mt-1 text-sm text-slate-400">{detail.inspection.technicianName} · {detail.inspection.orderNumber}</p></div><button onClick={() => setDetail(null)} className="rounded-lg border border-white/10 px-3 py-2 text-sm">{t("close")}</button></div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[
           [t("inspectionTechnician"), `${detail.inspection.technicianName} (${detail.inspection.technicianCard})`],
           [t("supervisor"), detail.inspection.supervisorName], [t("inspectionAuditor"), detail.inspection.auditorName],
           [t("employeesRegion"), detail.inspection.region], [t("inspectionProfile"), detail.inspection.profileName],
-          [t("status"), t(`inspectionStatus${detail.inspection.status}`)], [t("date"), detail.inspection.inspectionDate],
+          [t("status"), t(`inspectionStatus${detail.inspection.status}`)], [t("date"), new Date(detail.inspection.inspectionDate).toLocaleDateString(locale)],
           [t("inspectionCoordinates"), detail.inspection.latitude != null && detail.inspection.longitude != null ? `${detail.inspection.latitude}, ${detail.inspection.longitude}` : "—"]
-        ].map(([label, value]) => <div key={label} className="rounded-lg border border-white/[0.07] bg-black/20 p-3"><p className="text-xs uppercase text-slate-500">{label}</p><p className="mt-1 text-sm text-slate-100">{value}</p></div>)}</div>
+        ].map(([label, value]) => <div key={label} className="rounded-lg border border-white/[0.08] bg-[#0b111b] p-3"><p className="text-xs uppercase text-slate-500">{label}</p><p className="mt-1 text-sm text-slate-100">{value}</p></div>)}</div>
         <h3 className="mt-6 text-base font-semibold">{t("inspectionGroupResults")}</h3>
-        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{detail.groups.map((group) => <div key={group.id} className="rounded-lg border border-white/[0.08] bg-black/20 p-4"><div className="flex items-center justify-between"><p className="font-medium">{t(`inspectionGroup${group.groupKey}`)}</p><span className="text-lg font-bold text-teal-300">{group.rating}/5</span></div><p className="mt-2 text-sm text-slate-400">{group.comment || t("inspectionNoComment")}</p><div className="mt-3 space-y-1 text-xs text-slate-500">{group.answers.map((answer) => <div key={answer.criterionKey} className="flex justify-between gap-3"><span>{answer.criterionKey}</span><span className="text-slate-300">{answer.valueBoolean != null ? (answer.valueBoolean ? t("inspectionComplies") : t("inspectionDoesNotComply")) : answer.valueNumber ?? answer.valueText ?? "—"}</span></div>)}</div></div>)}</div>
-        {!!detail.tools.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionTools")}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{detail.tools.map((tool) => <div key={tool.toolId} className={`rounded-lg border px-3 py-2 text-sm ${tool.hasTool ? "border-teal-400/20 text-teal-200" : "border-rose-400/20 text-rose-200"}`}>{tool.toolName}: {tool.hasTool ? t("yes") : t("no")}</div>)}</div></>}
-        {!!detail.photos.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionPhotos")}</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{detail.photos.map((photo) => <div key={photo.id} className="overflow-hidden rounded-lg border border-white/[0.08] bg-black/20"><Image unoptimized src={mediaUrl(photo.photoUrl)} alt={photo.photoType} width={900} height={650} className="aspect-[4/3] w-full object-cover" /><div className="p-2 text-xs text-slate-400">{photo.photoType}</div></div>)}</div></>}
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{detail.groups.map((group) => <div key={group.id} className="rounded-lg border border-white/[0.08] bg-[#0b111b] p-4"><div className="flex items-center justify-between"><p className="font-medium">{t(`inspectionGroup${group.groupKey}`)}</p><span className="text-lg font-bold text-teal-300">{group.rating}/5</span></div><p className="mt-2 text-sm text-slate-400">{group.comment || t("inspectionNoComment")}</p><div className="mt-3 space-y-1 text-xs text-slate-500">{group.answers.map((answer) => <div key={answer.criterionKey} className="flex justify-between gap-3"><span>{t(`inspectionCriterion${answer.criterionKey}`)}</span><span className="text-right text-slate-300">{formatAnswer(answer)}</span></div>)}</div></div>)}</div>
+        {!!detail.tools.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionTools")}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{detail.tools.map((tool) => <div key={tool.toolId} className={`rounded-lg border bg-[#0b111b] px-3 py-2 text-sm ${tool.hasTool ? "border-teal-400/20 text-teal-200" : "border-rose-400/20 text-rose-200"}`}>{tool.toolName}: {tool.hasTool ? t("yes") : t("no")}</div>)}</div></>}
+        {!!detail.photos.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionPhotos")}</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{detail.photos.map((photo) => <div key={photo.id} className="overflow-hidden rounded-lg border border-white/[0.08] bg-[#0b111b]"><Image unoptimized src={mediaUrl(photo.photoUrl)} alt={t(`inspectionPhoto${photo.photoType}`)} width={900} height={650} className="aspect-[4/3] w-full object-cover" /><div className="p-2 text-xs text-slate-400">{t(`inspectionPhoto${photo.photoType}`)}</div></div>)}</div></>}
       </div>
     </div>}
   </div>;
