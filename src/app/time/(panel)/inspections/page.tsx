@@ -6,6 +6,7 @@ import { CalendarDateField } from "@/components/CalendarDateField";
 import { apiFetch, ApiError, mediaUrl } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { useI18n } from "@/lib/i18n";
+import { downloadInspectionPdf } from "@/lib/inspectionPdf";
 
 type GroupKey =
   | "ATTENDANCE" | "PROFESSIONAL_IMAGE" | "VEHICLE" | "TOOLS" | "DRIVING"
@@ -232,6 +233,66 @@ export default function InspectionsPage() {
     URL.revokeObjectURL(url);
   }
 
+  async function exportDetailPdf() {
+    if (!detail) return;
+    const answerValue = (answer: InspectionDetail["groups"][number]["answers"][number]) => formatAnswer(answer);
+    const findings: { title: string; comment: string }[] = [];
+    detail.groups.forEach((group) => {
+      const failed = group.answers.filter((answer) => answer.valueBoolean === false);
+      failed.forEach((answer) => findings.push({
+        title: `${t(`inspectionGroup${group.groupKey}`)} - ${t(`inspectionCriterion${answer.criterionKey}`)}`,
+        comment: group.comment || t("inspectionNoComment")
+      }));
+      if (group.rating < 5 && !failed.length) findings.push({
+        title: `${t(`inspectionGroup${group.groupKey}`)} (${group.rating}/5)`,
+        comment: group.comment || t("inspectionNoComment")
+      });
+    });
+    detail.tools.filter((tool) => !tool.hasTool).forEach((tool) => findings.push({
+      title: `${t("inspectionMissingToolFinding")}: ${tool.toolName}`,
+      comment: detail.groups.find((group) => group.groupKey === "TOOLS")?.comment || t("inspectionNoComment")
+    }));
+    const date = new Date(detail.inspection.inspectionDate).toLocaleDateString(locale);
+    await downloadInspectionPdf({
+      title: t("inspectionPdfTitle"),
+      subtitle: `${t("order")}: ${detail.inspection.orderNumber}`,
+      fileName: `inspeccion-${detail.inspection.orderNumber}-${String(detail.inspection.inspectionDate).slice(0, 10)}.pdf`,
+      generatedAtLabel: t("inspectionPdfGeneratedAt"),
+      generatedAt: new Date().toLocaleString(locale),
+      generalTitle: t("inspectionPdfGeneralData"),
+      scoreTitle: t("inspectionPdfScores"),
+      findingsTitle: t("inspectionPdfFindings"),
+      noFindingsText: t("inspectionPdfNoFindings"),
+      signatureTitle: t("inspectionPdfSignatureSection"),
+      inspectorLabel: t("inspectionAuditor"),
+      cardLabel: t("employeeCode"),
+      signatureLabel: t("inspectionPdfInspectorSignature"),
+      general: [
+        { label: t("date"), value: date },
+        { label: t("order"), value: detail.inspection.orderNumber },
+        { label: t("inspectionTechnician"), value: `${detail.inspection.technicianName} (${detail.inspection.technicianCard})` },
+        { label: t("supervisor"), value: `${detail.inspection.supervisorName} (${detail.inspection.supervisorCard})` },
+        { label: t("inspectionAuditor"), value: `${detail.inspection.auditorName} (${detail.inspection.auditorCard})` },
+        { label: t("employeesRegion"), value: detail.inspection.region },
+        { label: t("inspectionProfile"), value: detail.inspection.profileName },
+        { label: t("status"), value: t(`inspectionStatus${detail.inspection.status}`) },
+        { label: t("inspectionCoordinates"), value: detail.inspection.latitude != null && detail.inspection.longitude != null ? `${detail.inspection.latitude}, ${detail.inspection.longitude}` : "-" }
+      ],
+      groups: detail.groups.map((group) => ({
+        name: t(`inspectionGroup${group.groupKey}`),
+        rating: group.rating,
+        comment: group.comment || "",
+        answers: group.answers.map((answer) => ({
+          label: t(`inspectionCriterion${answer.criterionKey}`),
+          value: answerValue(answer)
+        }))
+      })),
+      findings,
+      inspectorName: detail.inspection.auditorName,
+      inspectorCard: detail.inspection.auditorCard
+    });
+  }
+
   function formatAnswer(answer: InspectionDetail["groups"][number]["answers"][number]) {
     if (answer.valueBoolean != null) {
       return answer.valueBoolean ? t("inspectionComplies") : t("inspectionDoesNotComply");
@@ -326,7 +387,7 @@ export default function InspectionsPage() {
 
     {detail && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4" onClick={() => setDetail(null)}>
       <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-xl border border-white/[0.12] bg-[#070b13] p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">{t("inspectionDetailTitle")}</h2><p className="mt-1 text-sm text-slate-400">{detail.inspection.technicianName} · {detail.inspection.orderNumber}</p></div><button onClick={() => setDetail(null)} className="rounded-lg border border-white/10 px-3 py-2 text-sm">{t("close")}</button></div>
+        <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">{t("inspectionDetailTitle")}</h2><p className="mt-1 text-sm text-slate-400">{detail.inspection.technicianName} · {detail.inspection.orderNumber}</p></div><div className="flex gap-2"><button onClick={() => void exportDetailPdf()} className="rounded-lg bg-teal-400 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-teal-300">{t("inspectionExportPdf")}</button><button onClick={() => setDetail(null)} className="rounded-lg border border-white/10 px-3 py-2 text-sm">{t("close")}</button></div></div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[
           [t("inspectionTechnician"), `${detail.inspection.technicianName} (${detail.inspection.technicianCard})`],
           [t("supervisor"), detail.inspection.supervisorName], [t("inspectionAuditor"), detail.inspection.auditorName],
