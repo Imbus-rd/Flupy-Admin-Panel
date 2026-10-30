@@ -2,15 +2,18 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ServiceIcon3DCatalog } from "@/components/ServiceIcon3DCatalog";
+import { ServiceIconAssetPreview } from "@/components/ServiceIconAssetPreview";
+import { ServiceOfficialAssetPickerModal } from "@/components/ServiceOfficialAssetPickerModal";
 import { ServicesShell } from "@/components/ServicesShell";
 import { Snackbar } from "@/components/Snackbar";
 import { servicesFetch, ServicesApiError } from "@/lib/servicesApi";
 import { useServicesAuth } from "@/lib/ServicesAuthProvider";
 import {
+  assetDisplayName,
   assetExistsForSlug,
+  isOfficialCatalogIconPath,
   isWebpServiceIconPath,
-  readableNameFromSlug,
+  resolveIconAsset,
   resolveIconUrlForSubmit,
   type ServiceIconAsset,
 } from "@/lib/serviceIconCatalog";
@@ -262,6 +265,7 @@ function ServicesDashboardContent() {
   });
   const [iconAssets, setIconAssets] = useState<ServiceIconAsset[]>([]);
   const [iconAssetsLoading, setIconAssetsLoading] = useState(false);
+  const [assetPickerTarget, setAssetPickerTarget] = useState<"create" | "edit" | null>(null);
   const [planForm, setPlanForm] = useState({
     name: "",
     slug: "",
@@ -402,23 +406,34 @@ function ServicesDashboardContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, activeTab]);
 
-  function selectCreateAsset(asset: ServiceIconAsset) {
-    setServiceForm((prev) => ({
-      ...prev,
-      icon_url: asset.icon,
-      slug: prev.slug.trim() ? prev.slug : asset.slug,
-      name: prev.name.trim() ? prev.name : readableNameFromSlug(asset.slug),
-    }));
-  }
-
-  function selectEditAsset(asset: ServiceIconAsset) {
+  function applyAssetToForm(
+    asset: ServiceIconAsset,
+    target: "create" | "edit"
+  ) {
+    const displayName = assetDisplayName(asset);
+    if (target === "create") {
+      setServiceForm((prev) => ({
+        ...prev,
+        icon_url: asset.icon,
+        slug: prev.slug.trim() ? prev.slug : asset.slug,
+        name: prev.name.trim() ? prev.name : displayName,
+      }));
+      return;
+    }
     setServiceEditForm((prev) => ({
       ...prev,
       icon_url: asset.icon,
       slug: prev.slug.trim() ? prev.slug : asset.slug,
-      name: prev.name.trim() ? prev.name : readableNameFromSlug(asset.slug),
+      name: prev.name.trim() ? prev.name : displayName,
     }));
   }
+
+  const createSelectedAsset = useMemo(
+    () => resolveIconAsset(serviceForm.icon_url, assetsBySlug),
+    [serviceForm.icon_url, assetsBySlug]
+  );
+
+  const createIconFromCatalog = isOfficialCatalogIconPath(serviceForm.icon_url, assetsBySlug);
 
   function onCreateIconChange(value: string) {
     if (value.trim() && /\.svg/i.test(value)) return;
@@ -900,15 +915,55 @@ function ServicesDashboardContent() {
                     placeholder="ej. fisioterapia (kebab-case; coincide con el .webp)"
                   />
                   <Field label="Descripcion" value={serviceForm.description} onChange={(v) => setServiceForm({ ...serviceForm, description: v })} />
-                  <Field
-                    label="Icono (opcional)"
-                    value={serviceForm.icon_url}
-                    onChange={onCreateIconChange}
-                    placeholder="Vacío = asset 3D /uploads/service-icons/<slug>.webp"
-                  />
-                  {serviceForm.icon_url.trim() && !isWebpServiceIconPath(serviceForm.icon_url) && (
-                    <p className="text-xs text-amber-200/90">Usa solo rutas WebP oficiales, no SVG.</p>
-                  )}
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-end justify-between gap-2">
+                      <span className="text-xs font-medium text-slate-500">Icono</span>
+                      <button
+                        type="button"
+                        onClick={() => setAssetPickerTarget("create")}
+                        className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-3 py-1.5 text-xs font-semibold text-teal-200 transition hover:bg-teal-400/15"
+                      >
+                        Elegir asset 3D
+                      </button>
+                    </div>
+                    <ServiceIconAssetPreview
+                      asset={createSelectedAsset}
+                      iconPath={serviceForm.icon_url}
+                      onChangeAsset={() => setAssetPickerTarget("create")}
+                      onClear={() =>
+                        setServiceForm((prev) => ({
+                          ...prev,
+                          icon_url: "",
+                        }))
+                      }
+                    />
+                    <label className="block">
+                      <span className="text-[11px] font-medium text-slate-500">
+                        Ruta oficial {createIconFromCatalog ? "(autogenerada)" : "(avanzado, opcional)"}
+                      </span>
+                      <input
+                        type="text"
+                        value={serviceForm.icon_url}
+                        readOnly={createIconFromCatalog}
+                        onChange={(e) => onCreateIconChange(e.target.value)}
+                        placeholder="Vacío = /uploads/service-icons/<slug>.webp al guardar"
+                        className={`mt-1.5 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-teal-400/20 ${
+                          createIconFromCatalog
+                            ? "cursor-default border-teal-400/25 bg-teal-400/[0.06] text-teal-100/90 focus:border-teal-400/35"
+                            : "border-white/[0.1] bg-[rgba(3,6,14,0.65)] text-white focus:border-teal-400/40"
+                        }`}
+                      />
+                    </label>
+                    {!createIconFromCatalog &&
+                      serviceForm.slug.trim() &&
+                      !assetExistsForSlug(serviceForm.slug, assetsBySlug) &&
+                      !iconAssetsLoading && (
+                        <p className="text-xs text-amber-200/90">No hay asset 3D para este slug.</p>
+                      )}
+                    {serviceForm.icon_url.trim() && !isWebpServiceIconPath(serviceForm.icon_url) && (
+                      <p className="text-xs text-amber-200/90">Usa solo rutas WebP oficiales, no SVG.</p>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Pais" value={serviceForm.country} onChange={(v) => setServiceForm({ ...serviceForm, country: v })} />
                     <Field label="Orden" value={serviceForm.sort_order} onChange={(v) => setServiceForm({ ...serviceForm, sort_order: v })} type="number" />
@@ -930,26 +985,6 @@ function ServicesDashboardContent() {
                   <button disabled={saving} className="w-full rounded-xl bg-teal-400 px-4 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-60">
                     Crear servicio
                   </button>
-                  <ServiceIcon3DCatalog
-                    assets={iconAssets}
-                    loading={iconAssetsLoading}
-                    selectedIconPath={serviceForm.icon_url}
-                    slugForHint={serviceForm.slug}
-                    hasAssetForSlug={assetExistsForSlug(serviceForm.slug, assetsBySlug)}
-                    onSelect={selectCreateAsset}
-                  />
-                  {editingServiceId !== null && (
-                    <ServiceIcon3DCatalog
-                      title="Cambiar asset (edición)"
-                      compact
-                      assets={iconAssets}
-                      loading={iconAssetsLoading}
-                      selectedIconPath={serviceEditForm.icon_url}
-                      slugForHint={serviceEditForm.slug}
-                      hasAssetForSlug={assetExistsForSlug(serviceEditForm.slug, assetsBySlug)}
-                      onSelect={selectEditAsset}
-                    />
-                  )}
                 </form>
                 <div className="space-y-4">
                   <div className="ui-card flex flex-wrap items-end gap-3 rounded-2xl p-4">
@@ -1010,7 +1045,21 @@ function ServicesDashboardContent() {
                                   </td>
                                   <td className="px-4 py-3">
                                     {editing ? (
-                                      <input value={serviceEditForm.icon_url} onChange={(e) => onEditIconChange(e.target.value)} className="w-48 rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-sm text-white" />
+                                      <div className="flex max-w-[14rem] flex-col gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => setAssetPickerTarget("edit")}
+                                          className="rounded-lg border border-teal-400/30 bg-teal-400/10 px-2 py-1 text-[11px] font-semibold text-teal-200"
+                                        >
+                                          Elegir asset 3D
+                                        </button>
+                                        <input
+                                          value={serviceEditForm.icon_url}
+                                          readOnly={isOfficialCatalogIconPath(serviceEditForm.icon_url, assetsBySlug)}
+                                          onChange={(e) => onEditIconChange(e.target.value)}
+                                          className="w-full rounded-lg border border-white/[0.12] bg-transparent px-2 py-1 text-xs text-white"
+                                        />
+                                      </div>
                                     ) : (s.icon_url || "-")}
                                   </td>
                                   <td className="px-4 py-3">
@@ -1643,6 +1692,19 @@ function ServicesDashboardContent() {
             </div>
           </ModalShell>
         )}
+
+        <ServiceOfficialAssetPickerModal
+          open={assetPickerTarget !== null}
+          assets={iconAssets}
+          loading={iconAssetsLoading}
+          selectedIconPath={
+            assetPickerTarget === "edit" ? serviceEditForm.icon_url : serviceForm.icon_url
+          }
+          onClose={() => setAssetPickerTarget(null)}
+          onConfirm={(asset) => {
+            if (assetPickerTarget) applyAssetToForm(asset, assetPickerTarget);
+          }}
+        />
 
         <Snackbar
           open={toast.open}

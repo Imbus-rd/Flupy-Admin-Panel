@@ -1,7 +1,9 @@
 export type ServiceIconAsset = {
   slug: string;
+  name?: string;
   icon: string;
   url: string;
+  category?: string;
 };
 
 const WEBP_PATH_RE = /^(\/uploads\/service-icons\/[a-z0-9]+(?:-[a-z0-9]+)*\.webp|https?:\/\/[^\s?#]+\/uploads\/service-icons\/[a-z0-9]+(?:-[a-z0-9]+)*\.webp)$/i;
@@ -21,6 +23,12 @@ export function slugFromIconPath(iconPath: string | null | undefined): string | 
   if (!iconPath) return null;
   const match = iconPath.match(/\/uploads\/service-icons\/([^/?#]+)\.webp/i);
   return match ? match[1] : null;
+}
+
+export function assetDisplayName(asset: ServiceIconAsset): string {
+  const fromApi = asset.name?.trim();
+  if (fromApi) return fromApi;
+  return readableNameFromSlug(asset.slug);
 }
 
 /** Human-readable label from kebab-case slug (Spanish-friendly, no overwrite of user names). */
@@ -54,4 +62,23 @@ export function assetExistsForSlug(slug: string, assetsBySlug: Map<string, Servi
   const key = slug.trim().toLowerCase();
   if (!key) return false;
   return assetsBySlug.has(key);
+}
+
+export function resolveIconAsset(
+  iconPath: string,
+  assetsBySlug: Map<string, ServiceIconAsset>
+): ServiceIconAsset | null {
+  const slug = slugFromIconPath(iconPath);
+  if (!slug) return null;
+  return assetsBySlug.get(slug.toLowerCase()) ?? null;
+}
+
+export function isOfficialCatalogIconPath(
+  iconPath: string,
+  assetsBySlug: Map<string, ServiceIconAsset>
+): boolean {
+  const trimmed = iconPath.trim();
+  if (!trimmed || !isWebpServiceIconPath(trimmed)) return false;
+  const asset = resolveIconAsset(trimmed, assetsBySlug);
+  return Boolean(asset && asset.icon === trimmed);
 }
