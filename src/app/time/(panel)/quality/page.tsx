@@ -6,6 +6,8 @@ import { useAuth } from "@/lib/AuthProvider";
 import { apiFetch, ApiError } from "@/lib/api";
 import { CalendarDateField } from "@/components/CalendarDateField";
 import { QualityLightbox, type LightboxPhoto } from "@/components/QualityLightbox";
+import { WifiAdvisoryReviewDialog, type WifiAdvisoryDetail } from "@/components/WifiAdvisoryReviewDialog";
+import { WifiAdvisoryConfigPanel } from "@/components/WifiAdvisoryConfigPanel";
 import { formatReportingDateTime } from "@/lib/timezone";
 
 type QItem = {
@@ -20,6 +22,8 @@ type QItem = {
   photoCount: number;
   anyFe: boolean;
   createdAt: string;
+  wifiRequired: boolean;
+  wifiStatus: string;
 };
 
 function inspectorDecisionLabel(decision: string, t: (k: string) => string) {
@@ -94,6 +98,12 @@ export default function QualityPage() {
     index: number;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [wifiReview, setWifiReview] = useState<{
+    qualityId: string;
+    orderId: string;
+    technician: string;
+    detail: WifiAdvisoryDetail;
+  } | null>(null);
 
   const scopedRegion = useMemo(() => {
     const r = authEmployee?.region;
@@ -122,6 +132,51 @@ export default function QualityPage() {
     },
     [token, t]
   );
+
+  const exportWifiExcel = useCallback(async () => {
+    if (!token) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const params = new URLSearchParams({ limit: "1000" });
+      if (fromDate) params.set("from", fromDate);
+      if (toDate) params.set("to", toDate);
+      if (filterEmployeeCode.trim()) params.set("employeeCode", filterEmployeeCode.trim());
+      if (filterOrderId.trim()) params.set("orderNumber", filterOrderId.trim());
+      const response = await apiFetch<{ items: Array<Record<string, unknown>> }>(`/admin/wifi-advisories?${params}`, { token });
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Asesorías WiFi");
+      sheet.columns = [
+        { header: "Fecha", key: "created_at", width: 22 },
+        { header: "Orden", key: "order_number", width: 18 },
+        { header: "Técnico", key: "technician_name", width: 28 },
+        { header: "Tarjeta", key: "employee_code", width: 14 },
+        { header: "Región", key: "region_name", width: 16 },
+        { header: "Tipo de trabajo", key: "work_type", width: 28 },
+        { header: "Estado", key: "status", width: 24 },
+        { header: "Puntos", key: "point_count", width: 10 },
+        { header: "Señal más débil (dBm)", key: "weakest_rssi", width: 22 },
+        { header: "Respuesta del cliente", key: "client_response", width: 22 },
+        { header: "Diagnóstico", key: "diagnosis", width: 50 },
+        { header: "Recomendación", key: "recommendation", width: 50 }
+      ];
+      response.items.forEach((item) => sheet.addRow(item));
+      sheet.getRow(1).font = { bold: true };
+      sheet.autoFilter = { from: "A1", to: "L1" };
+      const buffer = await workbook.xlsx.writeBuffer();
+      const url = URL.createObjectURL(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `flupy-asesorias-wifi-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setErr(cause instanceof Error ? cause.message : "No se pudo exportar el reporte WiFi.");
+    } finally {
+      setBusy(false);
+    }
+  }, [token, fromDate, toDate, filterEmployeeCode, filterOrderId]);
 
   const fetchItemsRef = useRef(fetchItems);
   fetchItemsRef.current = fetchItems;
@@ -220,6 +275,21 @@ export default function QualityPage() {
     [token, t]
   );
 
+  const openWifiReview = useCallback(async (q: QItem) => {
+    if (!token) return;
+    setErr(null);
+    try {
+      const detail = await apiFetch<{ wifiAdvisory?: WifiAdvisoryDetail | null }>(`/admin/quality/${q.id}`, { token });
+      if (!detail.wifiAdvisory) {
+        setErr("La asesoría WiFi todavía no ha sido iniciada para esta orden.");
+        return;
+      }
+      setWifiReview({ qualityId: q.id, orderId: q.orderId, technician: q.technicianName, detail: detail.wifiAdvisory });
+    } catch (cause) {
+      setErr(cause instanceof ApiError ? cause.message : t("errorLoad"));
+    }
+  }, [token, t]);
+
   const onPhotoDecision = useCallback(
     async (
       photoId: string,
@@ -304,23 +374,25 @@ export default function QualityPage() {
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() =>
-            void fetchItems(
-              fromDate,
-              toDate,
-              filterUserId,
-              filterEmployeeCode,
-              filterOrderId,
-              filterUiStatus,
-              filterInspectorDecision
-            )
-          }
-          className="self-start rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-2 text-sm text-slate-200 backdrop-blur-sm transition hover:border-teal-400/30"
-        >
-          {t("retry")}
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => void exportWifiExcel()}
+            disabled={busy}
+            className="self-start rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-200 transition hover:bg-sky-400/20 disabled:opacity-50"
+          >
+            Exportar WiFi a Excel
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void fetchItems(fromDate, toDate, filterUserId, filterEmployeeCode, filterOrderId, filterUiStatus, filterInspectorDecision)
+            }
+            className="self-start rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-2 text-sm text-slate-200 backdrop-blur-sm transition hover:border-teal-400/30"
+          >
+            {t("retry")}
+          </button>
+        </div>
       </div>
 
       <section className="ui-card p-4 sm:p-5">
@@ -425,6 +497,8 @@ export default function QualityPage() {
 
       {err && <p className="text-sm text-rose-400">{err}</p>}
 
+      {authEmployee?.role === "ADMIN" && token && <WifiAdvisoryConfigPanel token={token} />}
+
       {/* Desktop: table — no thumbnails; open row to load photos */}
       <div className="ui-table-wrap hidden md:block">
         <table className="w-full min-w-[880px] text-left text-sm">
@@ -468,13 +542,24 @@ export default function QualityPage() {
                   <td className="px-4 py-3 text-white">{q.technicianName}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-slate-300">{q.photoCount}</td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => void openGallery(q)}
-                      className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-3 py-1.5 text-xs font-medium text-teal-200 transition hover:bg-teal-400/18"
-                    >
-                      {t("qualityClickRow")}
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      {q.wifiRequired && (
+                        <button
+                          type="button"
+                          onClick={() => void openWifiReview(q)}
+                          className="rounded-lg border border-sky-400/35 bg-sky-400/10 px-3 py-1.5 text-xs font-medium text-sky-200 transition hover:bg-sky-400/20"
+                        >
+                          WiFi · {q.wifiStatus === "APPROVED" ? "Aprobada" : q.wifiStatus === "REJECTED" ? "Rechazada" : "Pendiente"}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void openGallery(q)}
+                        className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-3 py-1.5 text-xs font-medium text-teal-200 transition hover:bg-teal-400/18"
+                      >
+                        {t("qualityClickRow")}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -525,6 +610,15 @@ export default function QualityPage() {
               >
                 {t("qualityClickRow")}
               </button>
+              {q.wifiRequired && (
+                <button
+                  type="button"
+                  onClick={() => void openWifiReview(q)}
+                  className="mt-2 w-full rounded-xl border border-sky-400/35 bg-sky-400/10 py-2.5 text-sm font-medium text-sky-200 transition hover:bg-sky-400/20"
+                >
+                  Asesoría WiFi · {q.wifiStatus === "APPROVED" ? "Aprobada" : q.wifiStatus === "REJECTED" ? "Rechazada" : "Pendiente"}
+                </button>
+              )}
             </article>
           );
         })}
@@ -543,6 +637,21 @@ export default function QualityPage() {
           onPhotoDecision={onPhotoDecision}
           readOnly={readOnly}
           busy={busy}
+        />
+      )}
+      {wifiReview && (
+        <WifiAdvisoryReviewDialog
+          open
+          token={token}
+          orderId={wifiReview.orderId}
+          technician={wifiReview.technician}
+          detail={wifiReview.detail}
+          readOnly={readOnly}
+          onClose={() => setWifiReview(null)}
+          onReviewed={(status) => {
+            setWifiReview((current) => current ? { ...current, detail: { ...current.detail, status } } : current);
+            void fetchItems(fromDate, toDate, filterUserId, filterEmployeeCode, filterOrderId, filterUiStatus, filterInspectorDecision);
+          }}
         />
       )}
     </div>
