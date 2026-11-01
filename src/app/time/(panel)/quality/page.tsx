@@ -49,6 +49,26 @@ function badgeForItem(item: QItem, t: (k: string) => string) {
   return { label: t("uiStatusInProgress"), className: "bg-sky-500/10 text-sky-200 ring-sky-500/25" };
 }
 
+function wifiButtonState(status: string) {
+  const value = String(status || "PENDING").toUpperCase();
+  if (value === "COMPLETE_PENDING_REVIEW") {
+    return {
+      label: "Pendiente de revisión",
+      className: "border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20"
+    };
+  }
+  if (value === "APPROVED" || value === "REJECTED") {
+    return {
+      label: value === "APPROVED" ? "Aprobada" : "Rechazada",
+      className: "border-sky-400/35 bg-sky-400/10 text-sky-200 hover:bg-sky-400/20"
+    };
+  }
+  return {
+    label: "Pendiente de realizar",
+    className: "border-rose-400/35 bg-rose-400/10 text-rose-200 hover:bg-rose-400/20"
+  };
+}
+
 type QualityUiStatusFilter = "" | "IN_PROGRESS" | "FE" | "ERROR" | "OK";
 
 /** Matches `qualities.inspector_decision` (NONE = pending / not reviewed). */
@@ -525,6 +545,7 @@ export default function QualityPage() {
             )}
             {items.map((q) => {
               const b = badgeForItem(q, t);
+              const wifi = wifiButtonState(q.wifiStatus);
               return (
                 <tr key={q.id} className="hover:bg-white/[0.03]">
                   <td className="px-4 py-3">
@@ -547,9 +568,9 @@ export default function QualityPage() {
                         <button
                           type="button"
                           onClick={() => void openWifiReview(q)}
-                          className="rounded-lg border border-sky-400/35 bg-sky-400/10 px-3 py-1.5 text-xs font-medium text-sky-200 transition hover:bg-sky-400/20"
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${wifi.className}`}
                         >
-                          WiFi · {q.wifiStatus === "APPROVED" ? "Aprobada" : q.wifiStatus === "REJECTED" ? "Rechazada" : "Pendiente"}
+                          WiFi · {wifi.label}
                         </button>
                       )}
                       <button
@@ -577,6 +598,7 @@ export default function QualityPage() {
         )}
         {items.map((q) => {
           const b = badgeForItem(q, t);
+          const wifi = wifiButtonState(q.wifiStatus);
           return (
             <article
               key={q.id}
@@ -614,9 +636,9 @@ export default function QualityPage() {
                 <button
                   type="button"
                   onClick={() => void openWifiReview(q)}
-                  className="mt-2 w-full rounded-xl border border-sky-400/35 bg-sky-400/10 py-2.5 text-sm font-medium text-sky-200 transition hover:bg-sky-400/20"
+                  className={`mt-2 w-full rounded-xl border py-2.5 text-sm font-medium transition ${wifi.className}`}
                 >
-                  Asesoría WiFi · {q.wifiStatus === "APPROVED" ? "Aprobada" : q.wifiStatus === "REJECTED" ? "Rechazada" : "Pendiente"}
+                  Asesoría WiFi · {wifi.label}
                 </button>
               )}
             </article>
