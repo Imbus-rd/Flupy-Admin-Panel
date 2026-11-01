@@ -30,6 +30,13 @@ export type WifiAdvisoryDetail = {
   actionTaken?: string | null;
   clientResponse: string;
   clientComment?: string | null;
+  speedTest?: {
+    downloadMbps: number;
+    uploadMbps: number;
+    pingMs: number;
+    measuredAt?: string | null;
+    serverName?: string | null;
+  } | null;
   points: WifiPoint[];
   reviews: Array<{
     id: string;
@@ -69,7 +76,8 @@ function distanceMeters(a: WifiPoint | undefined, b: WifiPoint) {
   const dLat = toRad(b.latitude - a.latitude);
   const dLon = toRad(b.longitude - a.longitude);
   const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * Math.sin(dLon / 2) ** 2;
-  return 6_371_000 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  const distance = 6_371_000 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  return distance <= 100 ? distance : null;
 }
 
 function signalStyle(rssi?: number | null) {
@@ -147,7 +155,19 @@ export function WifiAdvisoryReviewDialog(props: Props) {
         </div>
 
         {detail.points.length > 0 && (
-          <section className="mt-5 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+          <section className="mt-5 space-y-4">
+            {detail.speedTest && (
+              <div className="rounded-lg border border-sky-400/20 bg-sky-400/[0.05] p-4">
+                <h3 className="font-semibold text-white">Velocidad de Internet</h3>
+                <p className="mt-1 text-xs text-slate-500">Prueba estimada desde el teléfono conectado al WiFi.</p>
+                <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+                  <div><p className="text-xl font-semibold text-sky-300">{detail.speedTest.downloadMbps.toFixed(1)}</p><p className="text-xs text-slate-500">Bajada Mbps</p></div>
+                  <div><p className="text-xl font-semibold text-sky-300">{detail.speedTest.uploadMbps.toFixed(1)}</p><p className="text-xs text-slate-500">Subida Mbps</p></div>
+                  <div><p className="text-xl font-semibold text-sky-300">{Math.round(detail.speedTest.pingMs)}</p><p className="text-xs text-slate-500">Ping ms</p></div>
+                </div>
+              </div>
+            )}
+            <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
               <h3 className="font-semibold text-white">Cobertura de señal</h3>
               <p className="mt-1 text-xs text-slate-500">Comparación visual y distancia aproximada desde el router.</p>
@@ -161,7 +181,7 @@ export function WifiAdvisoryReviewDialog(props: Props) {
                         <span className="truncate text-slate-200">{point.areaName}</span>
                         <span className="shrink-0 font-mono text-slate-300">
                           {point.representativeRssi != null ? `${point.representativeRssi} dBm` : "Sin dato"}
-                          {distance != null ? ` · ${Math.round(distance)} m` : ""}
+                          {point.pointRole === "ROUTER" ? " · 0 m" : distance != null ? ` · ~${Math.round(distance)} m` : " · GPS interior no fiable"}
                         </span>
                       </div>
                       <div className="h-2 overflow-hidden rounded-full bg-slate-800">
@@ -187,6 +207,7 @@ export function WifiAdvisoryReviewDialog(props: Props) {
                   </div>
                 ))}
               </div>
+            </div>
             </div>
           </section>
         )}
