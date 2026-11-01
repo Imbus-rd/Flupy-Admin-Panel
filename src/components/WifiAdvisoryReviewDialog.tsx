@@ -16,6 +16,9 @@ export type WifiPoint = {
   observation?: string | null;
   measurementError?: string | null;
   measuredAt?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  recommendedChannels?: Array<{ band: string; channel: number; score?: number; networks?: number }>;
   photoUrl?: string | null;
 };
 
@@ -60,6 +63,21 @@ function statusLabel(value: string) {
   return labels[String(value || "").toUpperCase()] || value;
 }
 
+function distanceMeters(a: WifiPoint | undefined, b: WifiPoint) {
+  if (a?.latitude == null || a.longitude == null || b.latitude == null || b.longitude == null) return null;
+  const toRad = (value: number) => value * Math.PI / 180;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLon = toRad(b.longitude - a.longitude);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * Math.sin(dLon / 2) ** 2;
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function signalStyle(rssi?: number | null) {
+  const width = Math.max(4, Math.min(100, (((rssi ?? -100) + 100) / 70) * 100));
+  const color = rssi == null ? "bg-slate-600" : rssi >= -55 ? "bg-emerald-400" : rssi >= -65 ? "bg-green-400" : rssi >= -70 ? "bg-amber-400" : "bg-rose-500";
+  return { width: `${width}%`, color };
+}
+
 export function WifiAdvisoryReviewDialog(props: Props) {
   const { detail, token, readOnly, onClose, onReviewed } = props;
   const [reason, setReason] = useState("");
@@ -68,6 +86,13 @@ export function WifiAdvisoryReviewDialog(props: Props) {
   const [error, setError] = useState<string | null>(null);
 
   if (!props.open) return null;
+  const routerPoint = detail.points.find((point) => point.pointRole === "ROUTER");
+  const channels = Array.from(
+    new Map(
+      detail.points.flatMap((point) => point.recommendedChannels || [])
+        .map((item) => [`${item.band}-${item.channel}`, item] as const)
+    ).values()
+  );
 
   async function review(decision: "APPROVED" | "REJECTED") {
     if (!token) return;
@@ -120,6 +145,51 @@ export function WifiAdvisoryReviewDialog(props: Props) {
             <p className="mt-1 font-semibold text-white">{detail.clientResponse === "ACCEPTED" ? "Aceptó" : detail.clientResponse === "REJECTED" ? "Rechazó" : "Pendiente"}</p>
           </div>
         </div>
+
+        {detail.points.length > 0 && (
+          <section className="mt-5 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+              <h3 className="font-semibold text-white">Cobertura de señal</h3>
+              <p className="mt-1 text-xs text-slate-500">Comparación visual y distancia aproximada desde el router.</p>
+              <div className="mt-4 space-y-3">
+                {detail.points.map((point) => {
+                  const signal = signalStyle(point.representativeRssi);
+                  const distance = point.pointRole === "ROUTER" ? 0 : distanceMeters(routerPoint, point);
+                  return (
+                    <div key={`signal-${point.id}`}>
+                      <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+                        <span className="truncate text-slate-200">{point.areaName}</span>
+                        <span className="shrink-0 font-mono text-slate-300">
+                          {point.representativeRssi != null ? `${point.representativeRssi} dBm` : "Sin dato"}
+                          {distance != null ? ` · ${Math.round(distance)} m` : ""}
+                        </span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+                        <div className={`h-full rounded-full ${signal.color}`} style={{ width: signal.width }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+              <h3 className="font-semibold text-white">Canales con mejor disponibilidad</h3>
+              <p className="mt-1 text-xs text-slate-500">Estimación según las redes cercanas observadas.</p>
+              <div className="mt-4 space-y-3">
+                {channels.length === 0 && <p className="text-sm text-slate-500">Sin exploración de canales disponible.</p>}
+                {Object.entries(channels.reduce<Record<string, typeof channels>>((acc, item) => {
+                  (acc[item.band] ||= []).push(item);
+                  return acc;
+                }, {})).map(([band, options]) => (
+                  <div key={band}>
+                    <p className="text-xs font-semibold uppercase text-slate-500">{band}</p>
+                    <p className="mt-1 text-sm text-teal-200">{(options || []).slice(0, 3).map((item) => `Canal ${item.channel}`).join(" · ")}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {detail.points.map((point) => (
