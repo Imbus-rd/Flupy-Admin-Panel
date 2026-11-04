@@ -4,6 +4,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarDateField } from "@/components/CalendarDateField";
+import { InspectionPhotoLightbox } from "@/components/InspectionPhotoLightbox";
 import { apiFetch, ApiError, mediaUrl } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { useI18n } from "@/lib/i18n";
@@ -163,6 +164,7 @@ export default function InspectionsPage() {
   const [truncated, setTruncated] = useState(false);
   const [detail, setDetail] = useState<InspectionDetail | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
+  const [photoViewerIndex, setPhotoViewerIndex] = useState<number | null>(null);
 
   const loadOptions = useCallback(async () => {
     if (!token) return;
@@ -439,10 +441,6 @@ export default function InspectionsPage() {
         </div>
         <p className="mt-4 text-xs text-slate-500">{t("inspectionComplianceFormula")}</p>
       </section>
-      <div className="grid gap-4 xl:grid-cols-2">
-        {qualityTable(t("inspectionQualityByTechnician"), qualityByTechnician)}
-        {qualityTable(t("inspectionQualityBySupervisor"), qualityBySupervisor)}
-      </div>
     </>}
 
     <section className="ui-card p-4">
@@ -462,6 +460,11 @@ export default function InspectionsPage() {
         <button onClick={() => { setFilters(emptyFilters); void load(emptyFilters); }} className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-200 hover:border-teal-400/30">{t("filterClear")}</button>
       </div>
     </section>
+
+    {mode === "OFFLINE" && <div className="grid gap-4 xl:grid-cols-2">
+      {qualityTable(t("inspectionQualityByTechnician"), qualityByTechnician)}
+      {qualityTable(t("inspectionQualityBySupervisor"), qualityBySupervisor)}
+    </div>}
 
     {message && <div className="rounded-lg border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{message}</div>}
     {truncated && <div className="rounded-lg border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">{t("inspectionResultsLimited")}</div>}
@@ -503,8 +506,16 @@ export default function InspectionsPage() {
         <h3 className="mt-6 text-base font-semibold">{t("inspectionGroupResults")}</h3>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{detail.groups.map((group) => <div key={group.id} className="rounded-lg border border-white/[0.08] bg-[#0b111b] p-4"><div className="flex items-center justify-between"><p className="font-medium">{t(`inspectionGroup${group.groupKey}`)}</p><span className="text-lg font-bold text-teal-300">{group.rating}/5</span></div><p className="mt-2 text-sm text-slate-400">{group.comment || t("inspectionNoComment")}</p><div className="mt-3 space-y-1 text-xs text-slate-500">{group.answers.map((answer) => <div key={answer.criterionKey} className="flex justify-between gap-3"><span>{t(`inspectionCriterion${answer.criterionKey}`)}</span><span className="text-right text-slate-300">{formatAnswer(answer)}</span></div>)}</div></div>)}</div>
         {!!detail.tools.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionTools")}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{detail.tools.map((tool) => <div key={tool.toolId} className={`rounded-lg border bg-[#0b111b] px-3 py-2 text-sm ${tool.hasTool ? "border-teal-400/20 text-teal-200" : "border-rose-400/20 text-rose-200"}`}>{tool.toolName}: {tool.hasTool ? t("yes") : t("no")}</div>)}</div></>}
-        {!!detail.photos.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionPhotos")}</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{detail.photos.map((photo) => <div key={photo.id} className="overflow-hidden rounded-lg border border-white/[0.08] bg-[#0b111b]"><Image unoptimized src={mediaUrl(photo.photoUrl)} alt={t(`inspectionPhoto${photo.photoType}`)} width={900} height={650} className="aspect-[4/3] w-full object-cover" /><div className="p-2 text-xs text-slate-400">{t(`inspectionPhoto${photo.photoType}`)}</div></div>)}</div></>}
+        {!!detail.photos.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionPhotos")}</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{detail.photos.map((photo, index) => <button type="button" onClick={() => setPhotoViewerIndex(index)} key={photo.id} className="overflow-hidden rounded-lg border border-white/[0.08] bg-[#0b111b] text-left hover:border-teal-400/40"><Image unoptimized src={mediaUrl(photo.photoUrl)} alt={t(`inspectionPhoto${photo.photoType}`)} width={900} height={650} className="aspect-[4/3] w-full object-cover" /><div className="p-2 text-xs text-slate-400">{t(`inspectionPhoto${photo.photoType}`)}</div></button>)}</div></>}
       </div>
     </div>}
+    {detail && photoViewerIndex != null && <InspectionPhotoLightbox
+      photos={detail.photos}
+      initialIndex={photoViewerIndex}
+      imageUrl={(photo) => mediaUrl(photo.photoUrl)}
+      photoLabel={(photo) => t(`inspectionPhoto${photo.photoType}`)}
+      closeLabel={t("close")}
+      onClose={() => setPhotoViewerIndex(null)}
+    />}
   </div>;
 }
