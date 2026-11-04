@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarDateField } from "@/components/CalendarDateField";
 import { apiFetch, ApiError, mediaUrl } from "@/lib/api";
@@ -11,6 +12,18 @@ import { downloadInspectionPdf } from "@/lib/inspectionPdf";
 type GroupKey =
   | "ATTENDANCE" | "PROFESSIONAL_IMAGE" | "VEHICLE" | "TOOLS" | "DRIVING"
   | "CUSTOMER_SERVICE" | "FIELD_SKILLS" | "EXTERNAL_LIMITATIONS" | "WORK_CLOSURE";
+
+export type InspectionMode = "ONLINE" | "OFFLINE" | "VALIDATED";
+
+type QualityIndicator = {
+  id: string;
+  card: string;
+  name: string;
+  okSamples: number;
+  criticalSamples: number;
+  evaluatedSamples: number;
+  compliancePercent: number | null;
+};
 
 type InspectionRow = {
   id: string;
@@ -36,11 +49,17 @@ type InspectionRow = {
   lowRatingGroups: number;
   photoCount: number;
   missingTools: number;
+  okSamples: number;
+  criticalSamples: number;
+  evaluatedSamples: number;
+  compliancePercent: number | null;
   groupRatings: Record<GroupKey, number | null>;
 };
 
 type ReportResponse = {
   items: InspectionRow[];
+  qualityByTechnician: QualityIndicator[];
+  qualityBySupervisor: QualityIndicator[];
   truncated?: boolean;
   summary: {
     total: number;
@@ -49,6 +68,10 @@ type ReportResponse = {
     cancelled: number;
     withFindings: number;
     averageRating?: number | null;
+    okSamples: number;
+    criticalSamples: number;
+    evaluatedSamples: number;
+    compliancePercent: number | null;
   };
 };
 
@@ -104,8 +127,9 @@ const groupKeys: GroupKey[] = [
   "CUSTOMER_SERVICE", "FIELD_SKILLS", "EXTERNAL_LIMITATIONS", "WORK_CLOSURE"
 ];
 
-function buildQuery(filters: Filters) {
+function buildQuery(filters: Filters, mode: InspectionMode) {
   const query = new URLSearchParams();
+  query.set("mode", mode);
   Object.entries(filters).forEach(([key, value]) => { if (value.trim()) query.set(key, value.trim()); });
   return query.toString();
 }
@@ -117,13 +141,22 @@ function statusTone(status: string) {
 }
 
 export default function InspectionsPage() {
+  const pathname = usePathname();
+  const mode: InspectionMode = pathname.endsWith("/offline")
+    ? "OFFLINE"
+    : pathname.endsWith("/validated")
+      ? "VALIDATED"
+      : "ONLINE";
   const { token } = useAuth();
   const { t, locale } = useI18n();
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [rows, setRows] = useState<InspectionRow[]>([]);
   const [summary, setSummary] = useState<ReportResponse["summary"]>({
-    total: 0, completed: 0, inProgress: 0, cancelled: 0, withFindings: 0, averageRating: null
+    total: 0, completed: 0, inProgress: 0, cancelled: 0, withFindings: 0, averageRating: null,
+    okSamples: 0, criticalSamples: 0, evaluatedSamples: 0, compliancePercent: null
   });
+  const [qualityByTechnician, setQualityByTechnician] = useState<QualityIndicator[]>([]);
+  const [qualityBySupervisor, setQualityBySupervisor] = useState<QualityIndicator[]>([]);
   const [options, setOptions] = useState<Options>(emptyOptions);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -134,28 +167,30 @@ export default function InspectionsPage() {
   const loadOptions = useCallback(async () => {
     if (!token) return;
     try {
-      setOptions(await apiFetch<Options>("/quality-inspection-reports/options", { token }));
+      setOptions(await apiFetch<Options>(`/quality-inspection-reports/options?mode=${mode}`, { token }));
     } catch {
       setOptions(emptyOptions);
     }
-  }, [token]);
+  }, [mode, token]);
 
   const load = useCallback(async (next: Filters) => {
     if (!token) return;
     setBusy(true);
     setMessage(null);
     try {
-      const query = buildQuery(next);
+      const query = buildQuery(next, mode);
       const data = await apiFetch<ReportResponse>(`/quality-inspection-reports${query ? `?${query}` : ""}`, { token });
       setRows(data.items || []);
       setSummary(data.summary);
+      setQualityByTechnician(data.qualityByTechnician || []);
+      setQualityBySupervisor(data.qualityBySupervisor || []);
       setTruncated(Boolean(data.truncated));
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : t("errorLoad"));
     } finally {
       setBusy(false);
     }
-  }, [token, t]);
+  }, [mode, token, t]);
 
   useEffect(() => {
     if (!token) return;
@@ -199,6 +234,10 @@ export default function InspectionsPage() {
       { header: t("inspectionMissingTools"), key: "missingTools", width: 18 },
       { header: t("inspectionPhotos"), key: "photos", width: 14 },
       { header: t("inspectionCoordinates"), key: "coordinates", width: 26 },
+      { header: t("inspectionOkSamples"), key: "okSamples", width: 15 },
+      { header: t("inspectionCriticalSamples"), key: "criticalSamples", width: 18 },
+      { header: t("inspectionEvaluatedSamples"), key: "evaluatedSamples", width: 18 },
+      { header: t("inspectionCompliance"), key: "compliance", width: 18 },
       ...groupKeys.map((key) => ({ header: t(`inspectionGroup${key}`), key, width: 24 }))
     ];
     rows.forEach((row) => sheet.addRow({
@@ -216,19 +255,48 @@ export default function InspectionsPage() {
       missingTools: row.missingTools,
       photos: row.photoCount,
       coordinates: row.latitude != null && row.longitude != null ? `${row.latitude}, ${row.longitude}` : "",
+      okSamples: row.okSamples,
+      criticalSamples: row.criticalSamples,
+      evaluatedSamples: row.evaluatedSamples,
+      compliance: row.compliancePercent == null ? t("inspectionNoSample") : `${row.compliancePercent.toFixed(2)}%`,
       ...Object.fromEntries(groupKeys.map((key) => [key, row.groupRatings[key] ?? ""]))
     }));
     sheet.getRow(1).font = { bold: true };
     sheet.getRow(1).height = 28;
     sheet.views = [{ state: "frozen", ySplit: 1 }];
     sheet.autoFilter = { from: "A1", to: `${String.fromCharCode(64 + sheet.columnCount)}${Math.max(1, rows.length + 1)}` };
+    if (mode === "OFFLINE") {
+      const addQualitySheet = (name: string, values: QualityIndicator[]) => {
+        const qualitySheet = workbook.addWorksheet(name);
+        qualitySheet.columns = [
+          { header: t("name"), key: "name", width: 34 },
+          { header: t("employeeCode"), key: "card", width: 18 },
+          { header: t("inspectionOkSamples"), key: "ok", width: 16 },
+          { header: t("inspectionCriticalSamples"), key: "critical", width: 18 },
+          { header: t("inspectionEvaluatedSamples"), key: "total", width: 18 },
+          { header: t("inspectionCompliance"), key: "compliance", width: 18 }
+        ];
+        values.forEach((value) => qualitySheet.addRow({
+          name: value.name,
+          card: value.card,
+          ok: value.okSamples,
+          critical: value.criticalSamples,
+          total: value.evaluatedSamples,
+          compliance: value.compliancePercent == null ? t("inspectionNoSample") : `${value.compliancePercent.toFixed(2)}%`
+        }));
+        qualitySheet.getRow(1).font = { bold: true };
+        qualitySheet.views = [{ state: "frozen", ySplit: 1 }];
+      };
+      addQualitySheet(t("inspectionQualityByTechnician"), qualityByTechnician);
+      addQualitySheet(t("inspectionQualityBySupervisor"), qualityBySupervisor);
+    }
     const buffer = await workbook.xlsx.writeBuffer();
     const url = URL.createObjectURL(new Blob([buffer as BlobPart], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `flupy-inspecciones-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    anchor.download = `flupy-inspecciones-${mode.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xlsx`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -323,12 +391,30 @@ export default function InspectionsPage() {
     ["inspectionWithFindings", summary.withFindings, "text-rose-300"],
     ["inspectionAverage", summary.averageRating == null ? "—" : `${summary.averageRating}/5`, "text-sky-300"]
   ];
+  const modeTitle = t(`inspections${mode}Title`);
+  const modeSubtitle = t(`inspections${mode}Subtitle`);
+
+  const qualityTable = (title: string, values: QualityIndicator[]) => <section className="ui-card overflow-hidden">
+    <div className="border-b border-white/[0.06] px-4 py-3"><h3 className="font-semibold text-white">{title}</h3></div>
+    <div className="overflow-x-auto"><table className="min-w-full text-left text-sm">
+      <thead className="bg-white/[0.04] text-xs uppercase text-slate-500"><tr>
+        <th className="px-3 py-3">{t("name")}</th><th className="px-3 py-3">{t("employeeCode")}</th>
+        <th className="px-3 py-3">{t("inspectionOkSamples")}</th><th className="px-3 py-3">{t("inspectionCriticalSamples")}</th>
+        <th className="px-3 py-3">{t("inspectionEvaluatedSamples")}</th><th className="px-3 py-3">{t("inspectionCompliance")}</th>
+      </tr></thead>
+      <tbody className="divide-y divide-white/[0.06]">{values.map((value) => <tr key={value.id || value.card}>
+        <td className="px-3 py-3 text-slate-100">{value.name}</td><td className="px-3 py-3 font-mono text-slate-400">{value.card}</td>
+        <td className="px-3 py-3 text-teal-300">{value.okSamples}</td><td className="px-3 py-3 text-rose-300">{value.criticalSamples}</td>
+        <td className="px-3 py-3">{value.evaluatedSamples}</td><td className="px-3 py-3 font-semibold text-sky-300">{value.compliancePercent == null ? t("inspectionNoSample") : `${value.compliancePercent.toFixed(2)}%`}</td>
+      </tr>)}{!values.length && <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">{t("inspectionNoSample")}</td></tr>}</tbody>
+    </table></div>
+  </section>;
 
   return <div className="space-y-5">
     <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h1 className="text-2xl font-bold text-white">{t("inspectionsTitle")}</h1>
-        <p className="mt-1 text-sm text-slate-400">{t("inspectionsSubtitle")}</p>
+        <h1 className="text-2xl font-bold text-white">{modeTitle}</h1>
+        <p className="mt-1 text-sm text-slate-400">{modeSubtitle}</p>
       </div>
       <div className="flex gap-2">
         <button onClick={() => void refresh()} disabled={busy} className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-200 hover:border-teal-400/30 disabled:opacity-40">{busy ? t("loading") : t("inspectionRefresh")}</button>
@@ -339,6 +425,25 @@ export default function InspectionsPage() {
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {cards.map(([key, value, color]) => <div key={String(key)} className="ui-card p-4"><p className="text-xs uppercase text-slate-500">{t(String(key))}</p><p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p></div>)}
     </section>
+
+    {mode === "OFFLINE" && <>
+      <section className="ui-card p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div><p className="text-xs uppercase tracking-wide text-slate-500">{t("inspectionGeneralCompliance")}</p>
+            <p className="mt-1 text-4xl font-bold text-sky-300">{summary.compliancePercent == null ? t("inspectionNoSample") : `${summary.compliancePercent.toFixed(2)}%`}</p></div>
+          <div className="grid grid-cols-3 gap-6 text-center">
+            <div><p className="text-xs text-slate-500">{t("inspectionOkSamples")}</p><p className="mt-1 text-xl font-semibold text-teal-300">{summary.okSamples}</p></div>
+            <div><p className="text-xs text-slate-500">{t("inspectionCriticalSamples")}</p><p className="mt-1 text-xl font-semibold text-rose-300">{summary.criticalSamples}</p></div>
+            <div><p className="text-xs text-slate-500">{t("inspectionEvaluatedSamples")}</p><p className="mt-1 text-xl font-semibold text-white">{summary.evaluatedSamples}</p></div>
+          </div>
+        </div>
+        <p className="mt-4 text-xs text-slate-500">{t("inspectionComplianceFormula")}</p>
+      </section>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {qualityTable(t("inspectionQualityByTechnician"), qualityByTechnician)}
+        {qualityTable(t("inspectionQualityBySupervisor"), qualityBySupervisor)}
+      </div>
+    </>}
 
     <section className="ui-card p-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">

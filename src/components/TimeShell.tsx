@@ -12,7 +12,11 @@ const nav = [
   { href: "/time/employees", key: "navEmployees" },
   { href: "/time/attendance", key: "navAttendance" },
   { href: "/time/quality", key: "navQuality" },
-  { href: "/time/inspections", key: "navInspections" },
+  { href: "/time/inspections", key: "navInspections", children: [
+    { href: "/time/inspections/online", key: "navQrOnline" },
+    { href: "/time/inspections/offline", key: "navQrOffline" },
+    { href: "/time/inspections/validated", key: "navQrValidated" }
+  ] },
   { href: "/time/geofences", key: "navGeofences" },
   { href: "/time/reports", key: "navReports" },
   { href: "/time/warehouse", key: "navWarehouse" },
@@ -88,6 +92,28 @@ export function TimeShell({ children }: { children: React.ReactNode }) {
               </div>
               {visibleNav.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                if (item.children) {
+                  return <div key={item.href} className="lg:w-full">
+                    <Link
+                      href={item.children[0].href}
+                      className={`relative block whitespace-nowrap rounded-xl px-3.5 py-2.5 text-sm font-medium tracking-tight transition ${active ? "text-teal-100" : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-100"}`}
+                      aria-expanded="true"
+                    >
+                      {active && <span className="absolute left-0 top-1/2 hidden h-6 w-0.5 -translate-y-1/2 rounded-full bg-teal-400 lg:block" aria-hidden />}
+                      {t(item.key)}
+                    </Link>
+                    <div className="ml-3 flex gap-1 border-l border-white/[0.08] pl-2 lg:flex-col" role="group">
+                      {item.children.map((child) => {
+                        const childActive = pathname === child.href;
+                        return <Link
+                          key={child.href}
+                          href={child.href}
+                          className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs transition ${childActive ? "bg-teal-400/10 text-teal-200" : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-200"}`}
+                        >{t(child.key)}</Link>;
+                      })}
+                    </div>
+                  </div>;
+                }
                 return (
                   <Link
                     key={item.href}
