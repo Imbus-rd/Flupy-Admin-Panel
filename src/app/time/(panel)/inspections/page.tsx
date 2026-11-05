@@ -24,6 +24,7 @@ type QualityIndicator = {
   criticalSamples: number;
   evaluatedSamples: number;
   compliancePercent: number | null;
+  errorPhotoCount: number;
 };
 
 type InspectionRow = {
@@ -61,6 +62,7 @@ type ReportResponse = {
   items: InspectionRow[];
   qualityByTechnician: QualityIndicator[];
   qualityBySupervisor: QualityIndicator[];
+  qualityByAuditor: QualityIndicator[];
   truncated?: boolean;
   summary: {
     total: number;
@@ -73,6 +75,7 @@ type ReportResponse = {
     criticalSamples: number;
     evaluatedSamples: number;
     compliancePercent: number | null;
+    errorPhotoCount: number;
   };
 };
 
@@ -154,10 +157,11 @@ export default function InspectionsPage() {
   const [rows, setRows] = useState<InspectionRow[]>([]);
   const [summary, setSummary] = useState<ReportResponse["summary"]>({
     total: 0, completed: 0, inProgress: 0, cancelled: 0, withFindings: 0, averageRating: null,
-    okSamples: 0, criticalSamples: 0, evaluatedSamples: 0, compliancePercent: null
+    okSamples: 0, criticalSamples: 0, evaluatedSamples: 0, compliancePercent: null, errorPhotoCount: 0
   });
   const [qualityByTechnician, setQualityByTechnician] = useState<QualityIndicator[]>([]);
   const [qualityBySupervisor, setQualityBySupervisor] = useState<QualityIndicator[]>([]);
+  const [qualityByAuditor, setQualityByAuditor] = useState<QualityIndicator[]>([]);
   const [options, setOptions] = useState<Options>(emptyOptions);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -186,6 +190,7 @@ export default function InspectionsPage() {
       setSummary(data.summary);
       setQualityByTechnician(data.qualityByTechnician || []);
       setQualityBySupervisor(data.qualityBySupervisor || []);
+      setQualityByAuditor(data.qualityByAuditor || []);
       setTruncated(Boolean(data.truncated));
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : t("errorLoad"));
@@ -276,7 +281,8 @@ export default function InspectionsPage() {
           { header: t("inspectionOkSamples"), key: "ok", width: 16 },
           { header: t("inspectionCriticalSamples"), key: "critical", width: 18 },
           { header: t("inspectionEvaluatedSamples"), key: "total", width: 18 },
-          { header: t("inspectionCompliance"), key: "compliance", width: 18 }
+          { header: t("inspectionCompliance"), key: "compliance", width: 18 },
+          { header: t("inspectionErrorPhotos"), key: "errorPhotos", width: 18 }
         ];
         values.forEach((value) => qualitySheet.addRow({
           name: value.name,
@@ -284,13 +290,15 @@ export default function InspectionsPage() {
           ok: value.okSamples,
           critical: value.criticalSamples,
           total: value.evaluatedSamples,
-          compliance: value.compliancePercent == null ? t("inspectionNoSample") : `${value.compliancePercent.toFixed(2)}%`
+          compliance: value.compliancePercent == null ? t("inspectionNoSample") : `${value.compliancePercent.toFixed(2)}%`,
+          errorPhotos: value.errorPhotoCount
         }));
         qualitySheet.getRow(1).font = { bold: true };
         qualitySheet.views = [{ state: "frozen", ySplit: 1 }];
       };
       addQualitySheet(t("inspectionQualityByTechnician"), qualityByTechnician);
       addQualitySheet(t("inspectionQualityBySupervisor"), qualityBySupervisor);
+      addQualitySheet(t("inspectionQualityByAuditor"), qualityByAuditor);
     }
     const buffer = await workbook.xlsx.writeBuffer();
     const url = URL.createObjectURL(new Blob([buffer as BlobPart], {
@@ -402,13 +410,13 @@ export default function InspectionsPage() {
       <thead className="bg-white/[0.04] text-xs uppercase text-slate-500"><tr>
         <th className="px-3 py-3">{t("name")}</th><th className="px-3 py-3">{t("employeeCode")}</th>
         <th className="px-3 py-3">{t("inspectionOkSamples")}</th><th className="px-3 py-3">{t("inspectionCriticalSamples")}</th>
-        <th className="px-3 py-3">{t("inspectionEvaluatedSamples")}</th><th className="px-3 py-3">{t("inspectionCompliance")}</th>
+        <th className="px-3 py-3">{t("inspectionEvaluatedSamples")}</th><th className="px-3 py-3">{t("inspectionCompliance")}</th><th className="px-3 py-3">{t("inspectionErrorPhotos")}</th>
       </tr></thead>
       <tbody className="divide-y divide-white/[0.06]">{values.map((value) => <tr key={value.id || value.card}>
         <td className="px-3 py-3 text-slate-100">{value.name}</td><td className="px-3 py-3 font-mono text-slate-400">{value.card}</td>
         <td className="px-3 py-3 text-teal-300">{value.okSamples}</td><td className="px-3 py-3 text-rose-300">{value.criticalSamples}</td>
-        <td className="px-3 py-3">{value.evaluatedSamples}</td><td className="px-3 py-3 font-semibold text-sky-300">{value.compliancePercent == null ? t("inspectionNoSample") : `${value.compliancePercent.toFixed(2)}%`}</td>
-      </tr>)}{!values.length && <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">{t("inspectionNoSample")}</td></tr>}</tbody>
+        <td className="px-3 py-3">{value.evaluatedSamples}</td><td className="px-3 py-3 font-semibold text-sky-300">{value.compliancePercent == null ? t("inspectionNoSample") : `${value.compliancePercent.toFixed(2)}%`}</td><td className="px-3 py-3 text-rose-200">{value.errorPhotoCount}</td>
+      </tr>)}{!values.length && <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">{t("inspectionNoSample")}</td></tr>}</tbody>
     </table></div>
   </section>;
 
@@ -433,10 +441,11 @@ export default function InspectionsPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div><p className="text-xs uppercase tracking-wide text-slate-500">{t("inspectionGeneralCompliance")}</p>
             <p className="mt-1 text-4xl font-bold text-sky-300">{summary.compliancePercent == null ? t("inspectionNoSample") : `${summary.compliancePercent.toFixed(2)}%`}</p></div>
-          <div className="grid grid-cols-3 gap-6 text-center">
+          <div className="grid grid-cols-2 gap-6 text-center sm:grid-cols-4">
             <div><p className="text-xs text-slate-500">{t("inspectionOkSamples")}</p><p className="mt-1 text-xl font-semibold text-teal-300">{summary.okSamples}</p></div>
             <div><p className="text-xs text-slate-500">{t("inspectionCriticalSamples")}</p><p className="mt-1 text-xl font-semibold text-rose-300">{summary.criticalSamples}</p></div>
             <div><p className="text-xs text-slate-500">{t("inspectionEvaluatedSamples")}</p><p className="mt-1 text-xl font-semibold text-white">{summary.evaluatedSamples}</p></div>
+            <div><p className="text-xs text-slate-500">{t("inspectionErrorPhotos")}</p><p className="mt-1 text-xl font-semibold text-rose-300">{summary.errorPhotoCount}</p></div>
           </div>
         </div>
         <p className="mt-4 text-xs text-slate-500">{t("inspectionComplianceFormula")}</p>
@@ -461,9 +470,10 @@ export default function InspectionsPage() {
       </div>
     </section>
 
-    {mode === "OFFLINE" && <div className="grid gap-4 xl:grid-cols-2">
+    {mode === "OFFLINE" && <div className="grid gap-4 xl:grid-cols-3">
       {qualityTable(t("inspectionQualityByTechnician"), qualityByTechnician)}
       {qualityTable(t("inspectionQualityBySupervisor"), qualityBySupervisor)}
+      {qualityTable(t("inspectionQualityByAuditor"), qualityByAuditor)}
     </div>}
 
     {message && <div className="rounded-lg border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{message}</div>}
