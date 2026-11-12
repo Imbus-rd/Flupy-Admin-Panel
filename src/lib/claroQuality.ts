@@ -2,8 +2,10 @@ export type ClaroFilters = { fromDate: string; toDate: string; region: string; d
 export const emptyClaroFilters: ClaroFilters = { fromDate: "", toDate: "", region: "", district: "", supervisorCard: "", technicianCard: "", process: "", project: "", product: "", technology: "", order: "", state: "final", result: "" };
 export type ClaroMetrics = { total: number; evaluated: number; ok: number; notAttributable: number; okSamples: number; critical: number; nonCritical: number; pending: number; quality: number | null; okPercent: number | null };
 export type ClaroGroup = ClaroMetrics & { id: string; name: string };
-export type ClaroSample = { id: string; sourceId: string; motherOrder: string; childOrder: string; sampleDate: string; district: string; region: string; process: string; project: string; product: string; technology: string; technicianName: string; technicianCard: string; supervisorName: string; supervisorCard: string; initialState: string; finalState: string | null; comment: string; errorCodes: string };
-export type ClaroReport = { filters: ClaroFilters; summary: ClaroMetrics; initial: ClaroMetrics; final: ClaroMetrics; latest: ClaroMetrics & { month: string | null }; monthly: (ClaroMetrics & { month: string })[]; byRegion: ClaroGroup[]; bySupervisor: ClaroGroup[]; byTechnician: ClaroGroup[]; byProcess: ClaroGroup[]; byProject: ClaroGroup[]; byProduct: ClaroGroup[]; rows: ClaroSample[]; formula: string; dateBasis: string; generatedAt: string };
+export type ClaroMatch = { exists: boolean; records: number; photoCount: number; technicianCards: string[]; technicianMatch: "UNKNOWN" | "MATCH" | "MIXED" | "MISMATCH"; statuses: string[]; ids: string[] };
+export type ClaroComparison = { flupy: ClaroMatch; online: ClaroMatch; offline: ClaroMatch };
+export type ClaroSample = { id: string; sourceId: string; motherOrder: string; childOrder: string; sampleDate: string; district: string; region: string; process: string; project: string; product: string; technology: string; technicianName: string; technicianCard: string; supervisorName: string; supervisorCard: string; initialState: string; finalState: string | null; comment: string; errorCodes: string; comparison?: ClaroComparison };
+export type ClaroReport = { filters: ClaroFilters; summary: ClaroMetrics; initial: ClaroMetrics; final: ClaroMetrics; latest: ClaroMetrics & { month: string | null }; monthly: (ClaroMetrics & { month: string })[]; byRegion: ClaroGroup[]; bySupervisor: ClaroGroup[]; byTechnician: ClaroGroup[]; byProcess: ClaroGroup[]; byProject: ClaroGroup[]; byProduct: ClaroGroup[]; rows: ClaroSample[]; formula: string; dateBasis: string; generatedAt: string; comparisonScope?: "COMPANY" | "AUTHORIZED" };
 type Person = { id: string; name: string; region: string; regions?: string[] };
 export type ClaroOptions = { scopedRegion: string | null; canImport: boolean; regions: string[]; districts: string[]; supervisors: Person[]; technicians: Person[]; processes: string[]; projects: string[]; products: string[]; technologies: string[] };
 export type ClaroImport = { sourceFilename: string; headers: string[]; rows: { rowNumber: number; values: (string | number | boolean | null)[] }[]; requestId: string; date1904: boolean };
@@ -12,6 +14,12 @@ export type ClaroDetail = ClaroSample & { raw: Record<string, unknown>; history:
 export const claroState: Record<string, string> = { OK: "OK", NOT_ATTRIBUTABLE: "No imputable", CRITICAL: "Crítica", NON_CRITICAL: "No crítica", PENDING: "Pendiente" };
 export const claroProject: Record<string, string> = { INSTALACION: "Instalación", AVERIA: "Avería" };
 export const claroPercent = (value: number | null) => value == null ? "Sin muestra" : `${value.toFixed(2)}%`;
+export const CLARO_GOAL = 96;
+export const claroGoal = (value: number | null) => value == null ? "Sin muestra" : value < CLARO_GOAL ? "Bajo la meta" : "Cumple la meta";
+export const claroQualityColor = (value: number | null) => value == null ? "text-slate-400" : value < CLARO_GOAL ? "text-red-400" : "text-teal-200";
+export const claroMatchLabel: Record<ClaroMatch["technicianMatch"], string> = { UNKNOWN: "Sin dato", MATCH: "Coincide", MIXED: "Coincidencia parcial", MISMATCH: "No coincide" };
+export const claroOperationalState: Record<string, string> = { PENDING: "Pendiente", IN_REVIEW: "En revisión", APPROVED: "Aprobada", REJECTED: "Rechazada", DRAFT: "Borrador", IN_PROGRESS: "En proceso", COMPLETED: "Completada", CANCELLED: "Cancelada" };
+export const claroComparisonLabel = (match?: ClaroMatch) => !match ? "No verificado" : !match.exists ? "No encontrada" : `${match.records} registro(s) · ${match.photoCount} foto(s) · Técnico: ${claroMatchLabel[match.technicianMatch]}`;
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
 
 export async function readClaroWorkbook(file: File): Promise<ClaroImport> {
@@ -61,15 +69,34 @@ export async function exportClaroReport(report: ClaroReport) {
     ws.columns.forEach(column => { column.width = 27; }); ws.views = [{ state: "frozen", ySplit: 1 }];
     ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: headings.length } }; return ws;
   }
-  sheet("Alcance", ["Campo", "Valor"], [...Object.entries(report.filters), ["Fórmula", report.formula], ["Fecha", report.dateBasis], ["Generado", report.generatedAt]]);
-  const headings = ["Grupo", "Muestras", "Evaluadas", "OK", "No imputables", "Muestras OK", "Críticas", "No críticas", "Pendientes", "Calidad ponderada %", "Muestras OK %"];
-  const values = (name: string, m: ClaroMetrics) => [name, m.total, m.evaluated, m.ok, m.notAttributable, m.okSamples, m.critical, m.nonCritical, m.pending, m.quality, m.okPercent];
+  sheet("Alcance", ["Campo", "Valor"], [...Object.entries(report.filters), ["Fórmula", report.formula], ["Fecha", report.dateBasis], ["Generado", report.generatedAt], ["Meta de calidad %", CLARO_GOAL], ["Cruce de órdenes", "Solo orden hija exacta, misma empresa, sin restringir fecha operativa. Cuenta fotos registradas; no garantiza disponibilidad del archivo."], ["Alcance del cruce", report.comparisonScope === "COMPANY" ? "Todas las regiones de la empresa" : "Solo registros autorizados. No encontrada no demuestra ausencia fuera de su alcance."], ["Reimportación", "Id de Claro + empresa. Se actualizan cambios y se conserva historial; no se elimina lo ausente del archivo."]]);
+  const headings = ["Grupo", "Muestras", "Evaluadas", "OK", "No imputables", "Muestras OK", "Críticas", "No críticas", "Pendientes", "Calidad ponderada %", "Muestras OK %", "Meta %", "Diferencia meta (pp)", "Cumplimiento meta"];
+  const values = (name: string, m: ClaroMetrics) => [name, m.total, m.evaluated, m.ok, m.notAttributable, m.okSamples, m.critical, m.nonCritical, m.pending, m.quality, m.okPercent, CLARO_GOAL, m.quality == null ? null : Number((m.quality - CLARO_GOAL).toFixed(2)), claroGoal(m.quality)];
   sheet("Resumen", headings, [values("Resultado seleccionado", report.summary), values("Estado inicial", report.initial), values("Estado final", report.final)]);
   sheet("Mensual", headings, report.monthly.map(m => values(m.month, m)));
   for (const [name, rows] of [["Regiones", report.byRegion], ["Supervisores", report.bySupervisor], ["Técnicos", report.byTechnician], ["Procesos", report.byProcess], ["Proyectos", report.byProject], ["Productos", report.byProduct]] as const) sheet(name, headings, rows.map(m => values(m.name, m)));
-  const detail = sheet("Muestras", ["Id Claro", "Orden madre", "Orden hija", "Fecha Mes", "Distrito", "Región", "Supervisor", "Tarjeta supervisor", "Técnico", "Tarjeta técnico", "Proceso", "Proyecto", "Producto", "Tecnología", "Estado inicial", "Estado final", "Comentario", "Códigos de error"],
-    report.rows.map(r => [r.sourceId, r.motherOrder, r.childOrder, new Date(r.sampleDate + "T00:00:00Z"), r.district, r.region, r.supervisorName, r.supervisorCard, r.technicianName, r.technicianCard, r.process, claroProject[r.project] || r.project, r.product, r.technology, claroState[r.initialState], claroState[r.finalState || "PENDING"], r.comment, r.errorCodes]));
+  const sources = [["flupy", "Flupy Time"], ["online", "QR Online"], ["offline", "QR Offline"]] as const;
+  const detail = sheet("Muestras", ["Id Claro", "Orden madre", "Orden hija", "Fecha Mes", "Distrito", "Región", "Supervisor", "Tarjeta supervisor", "Técnico", "Tarjeta técnico", "Proceso", "Proyecto", "Producto", "Tecnología", "Estado inicial", "Estado final", "Comentario", "Códigos de error", ...sources.flatMap(([, name]) => [name + " existe", name + " registros", name + " fotos", name + " tarjeta coincide", name + " tarjetas", name + " estados", name + " identificadores"])],
+    report.rows.map(r => [r.sourceId, r.motherOrder, r.childOrder, new Date(r.sampleDate + "T00:00:00Z"), r.district, r.region, r.supervisorName, r.supervisorCard, r.technicianName, r.technicianCard, r.process, claroProject[r.project] || r.project, r.product, r.technology, claroState[r.initialState], claroState[r.finalState || "PENDING"], r.comment, r.errorCodes, ...sources.flatMap(([key]) => {
+      const match = r.comparison?.[key];
+      return [!match ? "No verificado" : match.exists ? "Sí" : "No encontrada", match?.records ?? null, match?.photoCount ?? null, match ? claroMatchLabel[match.technicianMatch] : "No verificado", match?.technicianCards.join("; ") || "", match?.statuses.map(s => claroOperationalState[s] || s).join("; ") || "", match?.ids.join("; ") || ""];
+    })]));
   detail.getColumn(4).numFmt = "dd/mm/yyyy";
+  for (const ws of workbook.worksheets.filter(w => !["Alcance", "Muestras"].includes(w.name))) {
+    ws.getColumn(10).numFmt = '0.00"%"'; ws.getColumn(11).numFmt = '0.00"%"'; ws.getColumn(13).numFmt = '0.00';
+    ws.eachRow((row, i) => {
+      if (i <= 1 || typeof row.getCell(10).value !== "number") return;
+      const below = Number(row.getCell(10).value) < CLARO_GOAL;
+      for (const index of [10, 13, 14]) { row.getCell(index).font = { bold: true, color: { argb: below ? "FFB91C1C" : "FF0F766E" } }; if (below) row.getCell(index).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } }; }
+    });
+  }
+  if (report.monthly.length) {
+    const { claroChartImage } = await import("./claroChart");
+    const graph = workbook.addWorksheet("Gráfica mensual");
+    graph.getCell("A1").value = `Calidad mensual · meta ${CLARO_GOAL}% · ${report.filters.fromDate} / ${report.filters.toDate}`;
+    graph.addImage(workbook.addImage({ base64: await claroChartImage(report.monthly), extension: "png" }), { tl: { col: 0, row: 2 }, ext: { width: 920, height: 300 } });
+    graph.pageSetup = { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1, printArea: "A1:N20" };
+  }
   const data = await workbook.xlsx.writeBuffer(); const url = URL.createObjectURL(new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   const anchor = document.createElement("a"); anchor.href = url; anchor.download = `Calidad-Claro-${report.filters.fromDate || "inicio"}-${report.filters.toDate || "fin"}.xlsx`; document.body.appendChild(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

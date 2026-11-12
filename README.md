@@ -60,3 +60,9 @@ Use `.env` or `.env.production` on the server with `NEXT_PUBLIC_API_URL=...` bef
 ## Learn More
 
 - [Next.js Documentation](https://nextjs.org/docs)
+
+## Calidad Claro
+
+`/time/claro-quality` uses the company-scoped backend comparison of child orders with Flupy Time and QR Online/Offline. ADMIN can import and view all company regions in this module; other modules retain their regional restrictions. The quality target is 96%, with below-target scores in red. Monthly charts, comparison columns and target indicators are included in Excel exports. The chart in Excel is a printable image; its source values are in the Mensual sheet.
+
+The Claro wordmark in `public/claro-logo.svg` is an unmodified asset by Claro from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Logo_de_Claro.svg), marked PD-textlogo with trademark restrictions. It identifies the audit source; it does not imply affiliation. No external image request is made when viewing the panel.
