@@ -1,5 +1,22 @@
-export type ClaroFilters = { fromDate: string; toDate: string; region: string; district: string; supervisorCard: string; technicianCard: string; process: string; project: string; product: string; technology: string; order: string; state: string; result: string };
-export const emptyClaroFilters: ClaroFilters = { fromDate: "", toDate: "", region: "", district: "", supervisorCard: "", technicianCard: "", process: "", project: "", product: "", technology: "", order: "", state: "final", result: "" };
+export type ClaroMultiKey = "region" | "supervisorCard" | "technicianCard" | "product" | "technology" | "result";
+export const claroMultiKeys: readonly string[] = ["region", "supervisorCard", "technicianCard", "product", "technology", "result"];
+export type ClaroFilters = { fromDate: string; toDate: string; region: string[]; district: string; supervisorCard: string[]; technicianCard: string[]; process: string; project: string; product: string[]; technology: string[]; order: string; state: string; result: string[] };
+export const emptyClaroFilters: ClaroFilters = { fromDate: "", toDate: "", region: [], district: "", supervisorCard: [], technicianCard: [], process: "", project: "", product: [], technology: [], order: "", state: "final", result: [] };
+export function claroQuery(filters: Partial<ClaroFilters>) {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    for (const item of Array.isArray(value) ? value : [value]) if (item) query.append(key, item);
+  });
+  return query;
+}
+export function normalizeClaroFilters(values: Partial<ClaroFilters>): ClaroFilters {
+  const result = { ...emptyClaroFilters, ...values };
+  for (const key of claroMultiKeys as ClaroMultiKey[]) {
+    const value: unknown = values[key];
+    result[key] = [...new Set((Array.isArray(value) ? value : [value]).filter((item): item is string => typeof item === "string" && item.length > 0))];
+  }
+  return result;
+}
 export type ClaroMetrics = { total: number; evaluated: number; ok: number; notAttributable: number; okSamples: number; critical: number; nonCritical: number; pending: number; quality: number | null; okPercent: number | null };
 export type ClaroGroup = ClaroMetrics & { id: string; name: string };
 export type ClaroMatch = { exists: boolean; records: number; photoCount: number; technicianCards: string[]; technicianMatch: "UNKNOWN" | "MATCH" | "MIXED" | "MISMATCH"; statuses: string[]; ids: string[] };
@@ -71,7 +88,7 @@ export async function exportClaroReport(report: ClaroReport) {
     ws.columns.forEach(column => { column.width = 27; }); ws.views = [{ state: "frozen", ySplit: 1 }];
     ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: headings.length } }; return ws;
   }
-  sheet("Alcance", ["Campo", "Valor"], [...Object.entries(report.filters), ["Fórmula", report.formula], ["Fecha", report.dateBasis], ["Generado", report.generatedAt], ["Meta de calidad %", CLARO_GOAL], ["Cruce de órdenes", "Solo orden hija exacta, misma empresa, sin restringir fecha operativa. Cuenta fotos registradas; no garantiza disponibilidad del archivo."], ["Alcance del cruce", report.comparisonScope === "COMPANY" ? "Todas las regiones de la empresa" : "Solo registros autorizados. No encontrada no demuestra ausencia fuera de su alcance."], ["Reimportación", "Id de Claro + empresa. Se actualizan cambios y se conserva historial; no se elimina lo ausente del archivo."]]);
+  sheet("Alcance", ["Campo", "Valor"], [...Object.entries(report.filters).map(([key, value]) => [key, Array.isArray(value) ? value.join("; ") || "Todos" : value]), ["Fórmula", report.formula], ["Fecha", report.dateBasis], ["Generado", report.generatedAt], ["Meta de calidad %", CLARO_GOAL], ["Cruce de órdenes", "Solo orden hija exacta, misma empresa, sin restringir fecha operativa. Cuenta fotos registradas; no garantiza disponibilidad del archivo."], ["Alcance del cruce", report.comparisonScope === "COMPANY" ? "Todas las regiones de la empresa" : "Solo registros autorizados. No encontrada no demuestra ausencia fuera de su alcance."], ["Reimportación", "Id de Claro + empresa. Se actualizan cambios y se conserva historial; no se elimina lo ausente del archivo."]]);
   const headings = ["Grupo", "Muestras", "Evaluadas", "OK", "No imputables", "Muestras OK", "Críticas", "No críticas", "Pendientes", "Calidad ponderada %", "Muestras OK %", "Meta %", "Diferencia meta (pp)", "Cumplimiento meta"];
   const values = (name: string, m: ClaroMetrics) => [name, m.total, m.evaluated, m.ok, m.notAttributable, m.okSamples, m.critical, m.nonCritical, m.pending, m.quality, m.okPercent, CLARO_GOAL, m.quality == null ? null : Number((m.quality - CLARO_GOAL).toFixed(2)), claroGoal(m.quality)];
   sheet("Resumen", headings, [values("Resultado seleccionado", report.summary), values("Estado inicial", report.initial), values("Estado final", report.final)]);
@@ -93,11 +110,12 @@ export async function exportClaroReport(report: ClaroReport) {
     });
   }
   if (report.monthly.length) {
-    const { claroChartImage } = await import("./claroChart");
+    const { claroChartImage, claroChart } = await import("./claroChart");
+    const chart = claroChart(report.monthly);
     const graph = workbook.addWorksheet("Gráfica mensual");
     graph.getCell("A1").value = `Calidad mensual · meta ${CLARO_GOAL}% · ${report.filters.fromDate} / ${report.filters.toDate}`;
-    graph.addImage(workbook.addImage({ base64: await claroChartImage(report.monthly), extension: "png" }), { tl: { col: 0, row: 2 }, ext: { width: 920, height: 300 } });
-    graph.pageSetup = { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1, printArea: "A1:N20" };
+    graph.addImage(workbook.addImage({ base64: await claroChartImage(report.monthly), extension: "png" }), { tl: { col: 0, row: 2 }, ext: { width: chart.width, height: chart.height } });
+    graph.pageSetup = { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1, printArea: `A1:${graph.getColumn(Math.ceil(chart.width / 64)).letter}20` };
   }
   const data = await workbook.xlsx.writeBuffer(); const url = URL.createObjectURL(new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   const anchor = document.createElement("a"); anchor.href = url; anchor.download = `Calidad-Claro-${report.filters.fromDate || "inicio"}-${report.filters.toDate || "fin"}.xlsx`; document.body.appendChild(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);

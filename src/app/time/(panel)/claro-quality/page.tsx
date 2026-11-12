@@ -3,13 +3,14 @@
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Upload, X } from "lucide-react";
+import { FilterMultiSelect } from "@/components/FilterMultiSelect";
 import { ClaroMonthlyChart } from "@/components/ClaroMonthlyChart";
 import { ClaroOrderComparison, ClaroOrderMatch } from "@/components/ClaroOrderComparison";
 import { CalendarDateField } from "@/components/CalendarDateField";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
-import { CLARO_GOAL, claroGoal, claroQualityColor, claroPercent, claroProject, claroState, emptyClaroFilters, exportClaroReport, readClaroWorkbook,
-  type ClaroDetail, type ClaroFilters, type ClaroGroup, type ClaroImport, type ClaroOptions, type ClaroPreview, type ClaroReport } from "@/lib/claroQuality";
+import { CLARO_GOAL, claroMultiKeys, claroQuery, normalizeClaroFilters, claroGoal, claroQualityColor, claroPercent, claroProject, claroState, emptyClaroFilters, exportClaroReport, readClaroWorkbook,
+  type ClaroMultiKey, type ClaroDetail, type ClaroFilters, type ClaroGroup, type ClaroImport, type ClaroOptions, type ClaroPreview, type ClaroReport } from "@/lib/claroQuality";
 
 const command = "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-white/10 px-3 text-sm font-medium hover:bg-white/5 disabled:opacity-40";
 const input = "h-11 w-full min-w-0 rounded-lg border border-white/10 bg-[#080d15] px-3 text-sm text-white focus:border-teal-400 focus:outline-none";
@@ -33,22 +34,41 @@ export default function ClaroQualityPage() {
   const [report, setReport] = useState<ClaroReport | null>(null);
   const [busy, setBusy] = useState(false), [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState("");
+  const [optionsBusy, setOptionsBusy] = useState(true), [optionsError, setOptionsError] = useState("");
+  const optionsRequest = useRef(0);
   const [group, setGroup] = useState("bySupervisor"), [page, setPage] = useState(0);
   const [importOpen, setImportOpen] = useState(false), [importing, setImporting] = useState(false);
   const [payload, setPayload] = useState<ClaroImport | null>(null), [preview, setPreview] = useState<ClaroPreview | null>(null), [importError, setImportError] = useState("");
   const [detailOpen, setDetailOpen] = useState(false), [detail, setDetail] = useState<ClaroDetail | null>(null), [detailError, setDetailError] = useState("");
   const request = useRef(0), detailRequest = useRef(0), fileInput = useRef<HTMLInputElement>(null);
-  const loadOptions = useCallback(async () => { if (token) setOptions(await apiFetch<ClaroOptions>("/claro-quality/options", { token })); }, [token]);
+  const loadOptions = useCallback(async (values: ClaroFilters) => {
+    if (!token) return;
+    const id = ++optionsRequest.current; setOptionsBusy(true); setOptionsError("");
+    try {
+      const next = await apiFetch<ClaroOptions>(`/claro-quality/options?${claroQuery({ region: values.region, process: values.process, supervisorCard: values.supervisorCard })}`, { token });
+      if (id !== optionsRequest.current) return;
+      setOptions(next);
+      setFilters(old => ({ ...old, supervisorCard: old.supervisorCard.filter(card => next.supervisors.some(p => p.id === card)),
+        technicianCard: old.technicianCard.filter(card => next.technicians.some(p => p.id === card)) }));
+    } catch (err) { if (id === optionsRequest.current) { setOptions(null); setOptionsError(explain(err)); } }
+    finally { if (id === optionsRequest.current) setOptionsBusy(false); }
+  }, [token]);
   const load = useCallback(async (values: ClaroFilters) => {
     if (!token) return; const id = ++request.current; setBusy(true); setMessage("");
-    const query = new URLSearchParams(); Object.entries(values).forEach(([key, value]) => { if (value) query.set(key, value); });
-    try { const next = await apiFetch<ClaroReport>(`/claro-quality/report?${query}`, { token }); if (request.current === id) { setReport(next); setFilters(next.filters); setApplied(next.filters); setPage(0); } }
+    const query = claroQuery(values);
+    try { const next = await apiFetch<ClaroReport>(`/claro-quality/report?${query}`, { token }); if (request.current === id) { const canonical = normalizeClaroFilters(next.filters); setReport({ ...next, filters: canonical }); setFilters(canonical); setApplied(canonical); setPage(0); } }
     catch (err) { if (request.current === id) { setReport(null); setMessage(explain(err)); } }
     finally { if (request.current === id) setBusy(false); }
   }, [token]);
   const invalidateRequests = useCallback(() => { request.current++; }, []);
-  useEffect(() => { void loadOptions().catch(err => setMessage(explain(err))); void load(emptyClaroFilters); return invalidateRequests; }, [load, loadOptions, invalidateRequests]);
-  const set = (key: keyof ClaroFilters, value: string) => setFilters(old => ({ ...old, [key]: value, ...(key === "region" ? { supervisorCard: "", technicianCard: "", district: "" } : {}) }));
+  useEffect(() => { void load(emptyClaroFilters); return invalidateRequests; }, [load, invalidateRequests]);
+  const invalidateOptions = useCallback(() => { optionsRequest.current++; }, []);
+  const upstream = JSON.stringify({ region: filters.region, process: filters.process, supervisorCard: filters.supervisorCard });
+  useEffect(() => { void loadOptions({ ...emptyClaroFilters, ...JSON.parse(upstream) }); return invalidateOptions; }, [upstream, loadOptions, invalidateOptions]);
+  const set = (key: keyof ClaroFilters, value: string | string[]) => {
+    if (["region", "process", "supervisorCard"].includes(key)) { optionsRequest.current++; setOptionsBusy(true); }
+    setFilters(old => ({ ...old, [key]: value, ...(["region", "process", "supervisorCard"].includes(key) ? { technicianCard: [] } : {}) }));
+  };
   const closeImport = useCallback(() => { if (!importing) setImportOpen(false); }, [importing]);
   const closeDetail = useCallback(() => { setDetailOpen(false); detailRequest.current++; }, []);
 
@@ -60,7 +80,7 @@ export default function ClaroQualityPage() {
   async function confirmImport() {
     if (!payload || !preview?.canImport) return; setImporting(true); setImportError("");
     try { const result = await apiFetch<{ inserted: number; updated: number; unchanged: number; skipped: number }>("/claro-quality/import", { token, method: "POST", body: JSON.stringify(payload) });
-      setImportOpen(false); setPayload(null); setPreview(null); await loadOptions(); await load(applied);
+      setImportOpen(false); setPayload(null); setPreview(null); await loadOptions(applied); await load(applied);
       setMessage(`Importación guardada: ${result.inserted} nuevas, ${result.updated} actualizadas, ${result.unchanged} sin cambios y ${result.skipped} omitidas.`);
     } catch (err) { setImportError(explain(err)); } finally { setImporting(false); }
   }
@@ -77,22 +97,26 @@ export default function ClaroQualityPage() {
   const pages = Math.max(1, Math.ceil((report?.rows.length || 0) / 25));
   const selects: [keyof ClaroFilters, string, { id: string; name: string }[]][] = [
     ["region", "Región", (options?.regions || []).map(id => ({ id, name: id }))],
-    ["supervisorCard", "Supervisor", (options?.supervisors || []).filter(p => !filters.region || (p.regions || [p.region]).includes(filters.region)).map(p => ({ id: p.id, name: `${p.name} · ${p.id}` }))],
-    ["technicianCard", "Técnico", (options?.technicians || []).filter(p => !filters.region || (p.regions || [p.region]).includes(filters.region)).map(p => ({ id: p.id, name: `${p.name} · ${p.id}` }))],
+    ["supervisorCard", "Supervisor", (options?.supervisors || []).map(p => ({ id: p.id, name: `${p.name} · ${p.id}` }))],
+    ["technicianCard", "Técnico", (options?.technicians || []).map(p => ({ id: p.id, name: `${p.name} · ${p.id}` }))],
     ["process", "Proceso", (options?.processes || []).map(id => ({ id, name: id }))], ["project", "Proyecto", (options?.projects || []).map(id => ({ id, name: claroProject[id] || id }))],
     ["product", "Producto", (options?.products || []).map(id => ({ id, name: id }))], ["technology", "Tecnología", (options?.technologies || []).map(id => ({ id, name: id }))],
     ["result", "Resultado", Object.entries(claroState).map(([id, name]) => ({ id, name }))]
   ];
   return <div className="min-w-0 space-y-6 pb-8" aria-busy={busy}>
-    <header className="flex flex-wrap items-start justify-between gap-4"><div><h1 aria-label="Calidad Claro" className="flex items-center gap-3 text-2xl font-bold"><span>Calidad</span><Image src="/claro-logo.svg" alt="Claro" width={105} height={38} className="h-[38px] w-[105px] object-contain" /></h1><p className="mt-1 text-sm text-slate-400">Auditorías de campo{options?.scopedRegion ? ` · ${options.scopedRegion}` : ""}</p></div><div className="flex flex-wrap gap-2"><button className={command} disabled={busy} onClick={() => { void loadOptions().catch(err => setMessage(explain(err))); void load(applied); }}><RefreshCw size={16} className={busy ? "animate-spin" : ""} />Actualizar</button><button className={command} disabled={!report || busy || exporting} onClick={() => void download()}><Download size={16} />Exportar Excel</button>{employee?.role === "ADMIN" && options?.canImport && <button className={`${command} bg-teal-400 text-slate-950 hover:bg-teal-300`} onClick={() => setImportOpen(true)}><Upload size={16} />Importar auditoría</button>}</div></header>
+    <header className="flex flex-wrap items-start justify-between gap-4"><div><h1 aria-label="Calidad Claro" className="flex items-center gap-3 text-2xl font-bold"><span>Calidad</span><Image src="/claro-logo.svg" alt="Claro" width={105} height={38} className="h-[38px] w-[105px] object-contain" /></h1><p className="mt-1 text-sm text-slate-400">Auditorías de campo{options?.scopedRegion ? ` · ${options.scopedRegion}` : ""}</p></div><div className="flex flex-wrap gap-2"><button className={command} disabled={busy} onClick={() => { void loadOptions(applied); void load(applied); }}><RefreshCw size={16} className={busy ? "animate-spin" : ""} />Actualizar</button><button className={command} disabled={!report || busy || exporting} onClick={() => void download()}><Download size={16} />Exportar Excel</button>{employee?.role === "ADMIN" && options?.canImport && <button className={`${command} bg-teal-400 text-slate-950 hover:bg-teal-300`} onClick={() => setImportOpen(true)}><Upload size={16} />Importar auditoría</button>}</div></header>
     {message && <p role="status" className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm">{message}</p>}
     {latest && <section className="border-y border-white/10 py-5" aria-label="Resultado del mes más reciente"><div className="flex flex-wrap items-baseline justify-between gap-3"><h2 className="font-semibold">{latest.month ? `Mes más reciente: ${latest.month}` : "Sin auditorías importadas"}</h2><span className="text-sm text-slate-400">{applied.state === "initial" ? "Estado inicial" : "Estado final"} · {latest.total} muestras</span></div><div className="mt-4 flex items-center gap-5"><strong className={`text-3xl font-semibold tabular-nums ${claroQualityColor(latest.quality)}`}>{claroPercent(latest.quality)}</strong><div className="h-4 flex-1 overflow-hidden rounded-sm bg-white/5" role="meter" aria-label="Calidad ponderada del mes más reciente" aria-valuemin={0} aria-valuemax={100} aria-valuenow={latest.quality ?? undefined} aria-valuetext={claroPercent(latest.quality)}><div className={`h-full transition-[width] duration-500 ${latest.quality != null && latest.quality < CLARO_GOAL ? "bg-red-400" : "bg-teal-400"}`} style={{ width: `${latest.quality || 0}%` }} /></div></div><p className={`mt-3 text-sm ${claroQualityColor(latest.quality)}`}>Meta: {CLARO_GOAL}% · {claroGoal(latest.quality)}</p><div className="mt-4 flex flex-wrap gap-5 text-xs"><span className="text-teal-200">OK: {latest.ok}</span><span className="text-sky-200">No imputables: {latest.notAttributable}</span><span className="text-rose-300">Críticas: {latest.critical}</span><span className="text-amber-200">No críticas: {latest.nonCritical}</span><span className="text-slate-400">Pendientes: {latest.pending}</span></div></section>}
-    <form className="grid gap-3 border-b border-white/10 pb-5 sm:grid-cols-2 xl:grid-cols-4" onSubmit={e => { e.preventDefault(); void load(filters); }}>
+    <form className="grid gap-3 border-b border-white/10 pb-5 sm:grid-cols-2 xl:grid-cols-4" onSubmit={e => { e.preventDefault(); if (!optionsBusy && !optionsError) void load(filters); }}>
       <CalendarDateField id="claro-from" label="Desde fecha muestra" value={filters.fromDate} onChange={value => set("fromDate", value)} openLabel="Abrir calendario" /><CalendarDateField id="claro-to" label="Hasta fecha muestra" value={filters.toDate} onChange={value => set("toDate", value)} openLabel="Abrir calendario" />
       <label className="min-w-0 space-y-1 text-xs text-slate-400">Orden<input aria-label="Orden" className={input} value={filters.order} onChange={e => set("order", e.target.value)} /></label>
       <label className="min-w-0 space-y-1 text-xs text-slate-400">Evaluación<select aria-label="Evaluación" className={input} value={filters.state} onChange={e => set("state", e.target.value)}><option value="final">Después de apelación · final</option><option value="initial">Antes de apelación · inicial</option></select></label>
-      {selects.map(([key, label, values]) => <label key={key} className="min-w-0 space-y-1 text-xs text-slate-400">{label}<select aria-label={label} className={input} value={filters[key]} onChange={e => set(key, e.target.value)}><option value="">Todos</option>{values.map(v => <option value={v.id} key={v.id}>{v.name}</option>)}</select></label>)}
-      <div className="flex flex-wrap items-center gap-3 sm:col-span-2 xl:col-span-4"><button type="submit" disabled={busy} className={`${command} bg-teal-500/15 text-teal-200`}>Aplicar filtros</button><button type="button" className={command} disabled={busy} onClick={() => void load(emptyClaroFilters)}>Último mes / limpiar</button>{dirty && <span className="text-xs text-amber-200">Cambios sin aplicar</span>}</div>
+      {selects.map(([key, label, values]) => claroMultiKeys.includes(key)
+        ? <FilterMultiSelect key={key} label={label} options={values} value={filters[key] as string[]} onChange={value => set(key as ClaroMultiKey, value)} disabled={busy || (key === "technicianCard" && optionsBusy) || Boolean(optionsError)} />
+        : <label key={key} className="min-w-0 space-y-1 text-xs text-slate-400">{label}<select aria-label={label} className={input} value={filters[key] as string} onChange={e => set(key, e.target.value)}><option value="">Todos</option>{values.map(v => <option value={v.id} key={v.id}>{v.name}</option>)}</select></label>)}
+      {optionsBusy && <p role="status" className="text-xs text-slate-400 sm:col-span-2 xl:col-span-4">Actualizando supervisores y técnicos...</p>}
+      {optionsError && <p role="alert" className="text-sm text-rose-200 sm:col-span-2 xl:col-span-4">{optionsError} <button type="button" className={command} onClick={() => void loadOptions(filters)}>Reintentar</button></p>}
+      <div className="flex flex-wrap items-center gap-3 sm:col-span-2 xl:col-span-4"><button type="submit" disabled={busy || optionsBusy || Boolean(optionsError)} className={`${command} bg-teal-500/15 text-teal-200`}>Aplicar filtros</button><button type="button" className={command} disabled={busy} onClick={() => void load(emptyClaroFilters)}>Último mes / limpiar</button>{dirty && <span className="text-xs text-amber-200">Cambios sin aplicar</span>}</div>
     </form>
     {busy && <p role="status" className="text-sm text-slate-400">Consultando auditorías...</p>}
     {report && s && <>

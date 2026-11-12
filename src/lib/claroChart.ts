@@ -1,4 +1,4 @@
-import { CLARO_GOAL } from "./claroQuality";
+import { CLARO_GOAL, claroPercent } from "./claroQuality";
 
 export type ClaroMonth = { month: string; quality: number | null; evaluated: number };
 export function claroChart(months: ClaroMonth[]) {
@@ -13,11 +13,18 @@ export function claroChart(months: ClaroMonth[]) {
       cursor.setUTCMonth(cursor.getUTCMonth() + 1);
     }
   }
-  const width = 920, height = 300, left = 58, right = 28, top = 28, bottom = 58;
+  const height = 300, left = 58, right = 42, top = 44, bottom = 58;
+  const width = Math.max(920, (entries.length - 1) * 78 + left + right);
   const scores = entries.flatMap(m => m.quality == null ? [] : [m.quality]);
   const min = Math.max(0, Math.min(90, Math.floor(Math.min(CLARO_GOAL, ...scores) / 10) * 10 - 10));
   const y = (value: number) => top + (100 - value) / (100 - min) * (height - top - bottom);
-  const points = entries.map((m, i) => ({ ...m, x: left + (entries.length <= 1 ? 0.5 : i / (entries.length - 1)) * (width - left - right), y: m.quality == null ? null : y(m.quality) }));
+  const points = entries.map((m, i) => ({
+    ...m, x: left + (entries.length <= 1 ? 0.5 : i / (entries.length - 1)) * (width - left - right),
+    y: m.quality == null ? null : y(m.quality),
+    labelY: m.quality == null ? height - bottom - 12 : y(m.quality) - 12,
+    label: claroPercent(m.quality),
+    color: m.quality == null ? "#94a3b8" : m.quality < CLARO_GOAL ? "#f87171" : "#2dd4bf"
+  }));
   const segments: { x1: number; y1: number; x2: number; y2: number; color: string }[] = [];
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1], b = points[i];
@@ -41,9 +48,12 @@ export async function claroChartImage(months: ClaroMonth[]) {
   ctx.strokeStyle = "#fbbf24"; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(c.left, c.goalY); ctx.lineTo(c.width - c.right, c.goalY); ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle = "#fbbf24"; ctx.fillText(`Meta ${CLARO_GOAL}%`, c.width - 115, 18);
   for (const s of c.segments) { ctx.strokeStyle = s.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke(); }
-  c.points.forEach((p, i) => {
-    if (p.y != null) { ctx.fillStyle = p.quality! < CLARO_GOAL ? "#f87171" : "#2dd4bf"; ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI); ctx.fill(); }
-    if (i % Math.max(1, Math.ceil(c.points.length / 8)) === 0 || i === c.points.length - 1) { ctx.fillStyle = "#cbd5e1"; ctx.fillText(p.month, p.x - 25, c.height - 28); }
+  c.points.forEach(p => {
+    if (p.y != null) { ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI); ctx.fill(); }
+    ctx.textAlign = "center"; ctx.font = "bold 12px Arial";
+    ctx.strokeStyle = "#0b111c"; ctx.lineWidth = 4; ctx.strokeText(p.label, p.x, p.labelY);
+    ctx.fillStyle = p.color; ctx.fillText(p.label, p.x, p.labelY);
+    ctx.font = "12px Arial"; ctx.fillStyle = "#cbd5e1"; ctx.fillText(p.month, p.x, c.height - 28);
   });
   return canvas.toDataURL("image/png");
 }

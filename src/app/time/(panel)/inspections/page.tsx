@@ -316,7 +316,7 @@ export default function InspectionsPage() {
     const answerValue = (answer: InspectionDetail["groups"][number]["answers"][number]) => formatAnswer(answer);
     const findings: { title: string; comment: string }[] = [];
     detail.groups.forEach((group) => {
-      const failed = group.answers.filter((answer) => answer.valueBoolean === false);
+      const failed = group.answers.filter((answer) => answer.criterionKey !== "fuel_restock_minutes" && answer.valueBoolean === false);
       failed.forEach((answer) => findings.push({
         title: `${t(`inspectionGroup${group.groupKey}`)} - ${t(`inspectionCriterion${answer.criterionKey}`)}`,
         comment: group.comment || t("inspectionNoComment")
@@ -372,6 +372,9 @@ export default function InspectionsPage() {
   }
 
   function formatAnswer(answer: InspectionDetail["groups"][number]["answers"][number]) {
+    if (answer.criterionKey === "fuel_restock_minutes" && answer.valueText === "NOT_APPLICABLE") {
+      return t("inspectionNotApplicable");
+    }
     if (answer.valueBoolean != null) {
       return answer.valueBoolean ? t("inspectionComplies") : t("inspectionDoesNotComply");
     }
