@@ -21,15 +21,17 @@ export const claroMatchLabel: Record<ClaroMatch["technicianMatch"], string> = { 
 export const claroOperationalState: Record<string, string> = { PENDING: "Pendiente", IN_REVIEW: "En revisión", APPROVED: "Aprobada", REJECTED: "Rechazada", DRAFT: "Borrador", IN_PROGRESS: "En proceso", COMPLETED: "Completada", CANCELLED: "Cancelada" };
 export const claroComparisonLabel = (match?: ClaroMatch) => !match ? "No verificado" : !match.exists ? "No encontrada" : `${match.records} registro(s) · ${match.photoCount} foto(s) · Técnico: ${claroMatchLabel[match.technicianMatch]}`;
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+const headerKey = (value: string) => normalize(value).replace(/\s+/g, " ") === "MES DE LA MUESTRA" ? "MES" : normalize(value).replace(/\s+/g, " ");
 
 export async function readClaroWorkbook(file: File): Promise<ClaroImport> {
   if (!/\.xlsx$/i.test(file.name) || file.size > 10 * 1024 * 1024) throw new Error("Seleccione un archivo .xlsx de hasta 10 MB.");
   const ExcelJS = await import("exceljs");
-  const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(await file.arrayBuffer());
+  const { compatibleClaroWorkbook } = await import("./claroWorkbook");
+  const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(await compatibleClaroWorkbook(await file.arrayBuffer()));
   for (const sheet of workbook.worksheets) {
     for (let headerRow = 1; headerRow <= Math.min(10, sheet.rowCount); headerRow++) {
       const headers = Array.from({ length: sheet.columnCount }, (_, i) => sheet.getRow(headerRow).getCell(i + 1).text.trim());
-      if (!["ID", "MES", "DISTRITO", "ESTADO INICIAL"].every(key => headers.some(value => normalize(value) === key))) continue;
+      if (!["ID", "MES", "DISTRITO", "ESTADO INICIAL"].every(key => headers.some(value => headerKey(value) === key))) continue;
       if (headers.length > 100) throw new Error("El archivo excede 100 columnas.");
       const rows: ClaroImport["rows"] = [];
       sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
@@ -56,7 +58,7 @@ export async function readClaroWorkbook(file: File): Promise<ClaroImport> {
       return result;
     }
   }
-  throw new Error("No se encontró el reporte detallado con Id, Mes, Distrito y Estado inicial. El reporte de avance solo sirve como referencia de resultados.");
+  throw new Error("No se encontró el reporte detallado con Id, Mes de la muestra (o Mes), Distrito y Estado inicial. El reporte de avance solo sirve como referencia de resultados.");
 }
 
 export async function exportClaroReport(report: ClaroReport) {
