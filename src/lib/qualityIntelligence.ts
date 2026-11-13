@@ -1,4 +1,5 @@
-export type IntelligenceFilters = { fromDate: string; toDate: string; companyId: string; region: string; officeId: string; supervisorId: string; technicianId: string; auditorId: string; workType: string };
+import type { QualityPerformance } from "./qualityPerformance";
+export type IntelligenceFilters = { fromDate: string; toDate: string; companyId: string; region: string; officeId: string; supervisorId: string; technicianId: string; auditorId: string; workType: string; process?: string; project?: string };
 export type IntelligenceTotals = {
   qrOnline: { total: number; completed: number; inProgress: number; cancelled: number; accompaniments: number; evaluated: number; unratedCompleted: number; withFindings: number; withoutFindings: number; ratingSum: number; ratingCount: number; averageRating: number | null; findingPercent: number | null; groups: { key: string; label: string; evaluated: number; ratingSum: number; averageRating: number | null; withFindings: number }[] };
   orders: { registered: number; applicable: number; unknownCatalog: number; complete: number; incomplete: number; completePercent: number | null; incompletePercent: number | null; approved: number; rejected: number; fe: number; evaluated: number; pending: number; approvalPercent: number | null; errorPhotos: number };
@@ -10,10 +11,11 @@ export type IntelligencePerson = IntelligenceTotals & { id: string; name: string
 export type UsageTotals = { active: number; technicians: number; withPunch: number; withPhotos: number; both: number; onlyPunch: number; onlyPhotos: number; any: number; withoutActivity: number; punchPercent: number | null; photoPercent: number | null; bothPercent: number | null; anyPercent: number | null };
 export type UsageEmployee = { id: string; name: string; card: string; role: string; isSupervisor: boolean; region: string; officeName: string; supervisorId: string; supervisorName: string; createdDate: string | null; punchDays: number; lastPunchAt: string | null; photoCount: number; photoOrders: number; photoDays: number; lastPhotoAt: string | null; status: string };
 export type IntelligenceUsage = { summary: UsageTotals; previous: UsageTotals; monthly: (UsageTotals & { month: string })[]; bySupervisor: (UsageTotals & { id: string; name: string })[]; employees: UsageEmployee[]; limitations: string[] };
-export type IntelligenceFact = { id: string; label: string; numerator: number; denominator: number; value: number | null; unit?: "RATING" };
+export type IntelligenceFact = { id: string; label: string; numerator: number; denominator: number; value: number | null; unit?: "RATING" | "SCORE" };
 export type IntelligenceRecommendation = { id: string; title: string; evidenceIds: string[]; action: string; owner: string; priority: string; probableCause: string; timeframe: string; followUp: string };
 export type IntelligenceAnalysis = { executiveSummary: string; engine: string; model: string; snapshotId: string; generatedAt: string; limitations: string[]; findings: (Omit<IntelligenceRecommendation, "id"> & { analysis: string; kpi: string; target: string })[] };
 export type IntelligenceReport = {
+  performance?: QualityPerformance;
   usage?: IntelligenceUsage;
   generatedAt: string; snapshotId: string; companyName: string; filters: IntelligenceFilters & { previousFrom: string; previousTo: string };
   summary: IntelligenceTotals; previous: IntelligenceTotals; monthly: (IntelligenceTotals & { month: string })[];
@@ -23,14 +25,14 @@ export type IntelligenceReport = {
   incompleteOrders: { id: string; orderNumber: string; technicianName: string; technicianCard: string; supervisorName: string; workType: string; date: string; missing: string[]; required: number }[];
   onlineInspections: { id: string; accompanimentId: string; orderNumber: string; date: string; status: string; technicianName: string; technicianCard: string; supervisorName: string; auditorName: string; averageRating: number | null; hasFindings: boolean; missingTools: number; groups: { key: string; label: string; rating: number; comment: string; scored: boolean; failedCriteria: string[] }[] }[];
   facts: IntelligenceFact[]; recommendations: IntelligenceRecommendation[]; limitations: string[]; duplicateOrderRows: number;
-  effectiveness: { value: null; status: string }; ai: { configured: boolean; model: string | null; canGenerate: boolean };
+  effectiveness: { value: number | null; status: string }; ai: { configured: boolean; model: string | null; canGenerate: boolean };
 };
 type Option = { id: string; name: string; card?: string };
-export type IntelligenceOptions = { company: Option; scopedRegion: string | null; regions: string[]; offices: Option[]; supervisors: Option[]; technicians: Option[]; employees?: Option[]; auditors: Option[]; workTypes: { id: string; label: string }[]; ai: { configured: boolean; canGenerate: boolean } };
+export type IntelligenceOptions = { company: Option; scopedRegion: string | null; regions: string[]; offices: Option[]; supervisors: Option[]; technicians: Option[]; employees?: Option[]; auditors: Option[]; workTypes: { id: string; label: string }[]; processes?: string[]; projects?: string[]; ai: { configured: boolean; canGenerate: boolean } };
 
 export const displayPercent = (value: number | null | undefined) => value == null ? "Sin muestra" : `${value.toFixed(2)}%`;
 export const displayRating = (value: number | null | undefined) => value == null ? "Sin muestra" : `${value.toFixed(2)} / 5`;
-export const displayFact = (fact: IntelligenceFact) => fact.unit === "RATING" ? displayRating(fact.value) : displayPercent(fact.value);
+export const displayFact = (fact: IntelligenceFact) => fact.unit === "RATING" ? displayRating(fact.value) : fact.unit === "SCORE" ? fact.value == null ? "Sin muestra" : fact.value.toFixed(2) + " / 100" : displayPercent(fact.value);
 export const usageStatus: Record<string, string> = { BOTH: "Poncha y carga fotos", PUNCH_ONLY: "Solo poncha", PHOTOS_ONLY: "Solo carga fotos", NO_ACTIVITY: "Sin actividad registrada" };
 export const usageRole: Record<string, string> = { EMPLOYEE: "Empleado", SUPERVISOR: "Supervisor", ADMIN: "Administrador", INSPECTOR: "Inspector", WAREHOUSE: "Almacén" };
 const usageHeadings = ["Empleado", "Tarjeta", "Rol", "Región", "Localidad", "Supervisor", "Fecha de creación", "Días con entrada", "Última entrada UTC", "Órdenes con carga", "Fotos cargadas", "Días con fotos", "Última carga UTC", "Uso registrado"];
@@ -66,7 +68,17 @@ export async function exportIntelligence(report: IntelligenceReport, analysis: I
     ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, rows.length + 1), column: headings.length } };
   };
   sheet("Alcance", ["Campo", "Valor"], [["Empresa", report.companyName], ...Object.entries(report.filters), ["Generado", report.generatedAt], ["Identificador de datos", report.snapshotId], ...report.limitations.map(value => ["Limitación", value])]);
-  sheet("Indicadores", ["Indicador", "Numerador", "Universo", "Valor", "Unidad"], report.facts.map(f => [f.label, f.numerator, f.denominator, f.value, f.unit === "RATING" ? "Valoración de 1 a 5" : "Porcentaje"]));
+  sheet("Indicadores", ["Indicador", "Numerador", "Universo", "Valor", "Unidad"], report.facts.map(f => [f.label, f.numerator, f.denominator, f.value, f.unit === "RATING" ? "Valoración de 1 a 5" : f.unit === "SCORE" ? "Valoración sobre 100" : "Porcentaje"]));
+  if (report.performance) {
+    const p = report.performance;
+    const headings = ["Nombre", "Tarjeta", "Claro ponderado %", "Muestras Claro", "QR Offline %", "QR Offline evaluadas", "QR Online / 5", "QR Online evaluadas", "Fotos completas %", "Órdenes aplicables", "Puntualidad %", "Días con horario", "Uso app %", "Técnicos activos", "Retro+ enviadas", "Días con meta Retro+", "Objetivo de envíos diario", "Días con actividad", "Meta Retro+ %", "Valoración global / 100", "KPI disponibles", "KPI posibles"];
+    const values = (name: string, card: string, m: import("./qualityPerformance").PerformanceMetrics) => [name, card, m.claro.quality, m.claro.evaluated, m.qrOffline.value, m.qrOffline.evaluated, m.qrOnline.value, m.qrOnline.evaluated, m.photos.value, m.photos.applicable, m.attendance.value, m.attendance.knownDays, m.usage.value, m.usage.active, m.retro.submissions, m.retro.daysWithSubmission, m.retro.targetPerDay, m.retro.daysWithActivity, m.retro.value, m.overall.value, m.overall.available, m.overall.total];
+    sheet("KPI integrados", headings, [values("Total", "", p.summary)]);
+    sheet("KPI técnicos", headings, p.byTechnician.map(row => values(row.name, row.card, row)));
+    sheet("KPI supervisores", headings, p.bySupervisor.map(row => values(row.name, row.card, row)));
+    sheet("KPI mensual", headings, p.monthly.map(row => values(row.month, "", row)));
+    sheet("KPI procesos Claro", ["Proceso", "Evaluadas", "Calidad ponderada %", "Meta %"], p.byProcess.map(row => [row.process, row.claro.evaluated, row.claro.quality, 96]));
+  }
   if (report.usage) {
     sheet("Uso empleados", usageHeadings, usageValues(report.usage.employees));
     const headings = ["Grupo", "Activos", "Con entrada", "Con fotos", "Ambas funciones", "Solo entrada", "Solo fotos", "Sin actividad", "Entrada %", "Fotos %", "Algún uso %"];

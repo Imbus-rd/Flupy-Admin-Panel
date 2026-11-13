@@ -70,3 +70,9 @@ The Claro wordmark in `public/claro-logo.svg` is an unmodified asset by Claro fr
 Region, supervisor, technician, product, technology and outcome support multiple checkbox selections. Empty means all; values within a filter are OR, filters are AND. Supervisor choices depend on region/process; technician choices also depend on the selected supervisors, using the imported audit associations. Upstream changes clear selected technicians and prune invalid supervisors. Failed option refreshes block applying uncertain filters. Excel exports the applied report and lists every selected value.
 
 Deploy the matching backend first, then rebuild/deploy this panel. No new database migration or environment variable is required. QR Online fuel restocking marked NOT_APPLICABLE is displayed as No aplica (including the printable report), not as a failed criterion.
+
+## Integrated performance KPIs
+
+The dashboard and Quality Intelligence KPI view share /quality-intelligence/report and its existing regional and company authorization. Claro uses final weighted scores, the actual sample month and a 96% target; it is not merged into QR Offline's formula. Excel exports separate KPI sheets for totals, technicians, supervisors, month and Claro process. The approved overall score uses equal weights among available values of the seven requested KPIs. Online is normalized to 100; missing samples are excluded, observed zeros count, and coverage N/7 is always shown.
+
+Process/project controls are Claro-specific. Current punctuality covers first recorded non-automatic check-ins with known office schedules, not unproven absence. For this stage Retro+ uses completed submissions as the approved proxy, with one submission per technician and observed active day; extras cannot cover a different day. Actual positive customer ratings remain unverified. Inspection detail and PDF include the freshly saved OT proximity status when supplied by the backend.

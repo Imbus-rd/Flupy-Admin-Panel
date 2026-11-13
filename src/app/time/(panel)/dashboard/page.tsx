@@ -7,6 +7,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { formatReportingDateTime } from "@/lib/timezone";
 import { CalendarDateField } from "@/components/CalendarDateField";
 import { EMPLOYEE_REGIONS } from "@/lib/employeeRegions";
+import { QualityPerformanceDashboard } from "@/components/QualityPerformanceDashboard";
 
 const COUNT_UP_MS = 900;
 
@@ -274,6 +275,7 @@ export default function DashboardPage() {
         <StatCard label={t("geofences")} target={summary?.geofences ?? null} replayKey={statsReplayKey} />
       </div>
 
+      <QualityPerformanceDashboard />
       <section className="ui-card p-4 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
@@ -398,7 +400,7 @@ export default function DashboardPage() {
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="ui-card p-4 sm:p-5">
+        <section className="ui-card min-w-0 p-4 sm:p-5">
           <h2 className="text-lg font-semibold tracking-tight text-white">{t("recentAttendance")}</h2>
           <div className="mt-4 overflow-x-auto scrollbar-thin">
             <table className="w-full min-w-[420px] text-left text-sm">
@@ -443,7 +445,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="ui-card p-4 sm:p-5">
+        <section className="ui-card min-w-0 p-4 sm:p-5">
           <h2 className="text-lg font-semibold tracking-tight text-white">{t("recentActivity")}</h2>
           <ul className="mt-4 space-y-3">
             {activity.length === 0 && <li className="text-slate-500">{t("noData")}</li>}

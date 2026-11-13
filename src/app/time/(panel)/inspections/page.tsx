@@ -9,6 +9,7 @@ import { apiFetch, ApiError, mediaUrl } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import { downloadInspectionPdf } from "@/lib/inspectionPdf";
+import { inspectionLocationLabel, type InspectionOrderLocation } from "@/lib/inspectionOrderLocation";
 
 type GroupKey =
   | "ATTENDANCE" | "PROFESSIONAL_IMAGE" | "VEHICLE" | "TOOLS" | "DRIVING"
@@ -46,6 +47,7 @@ type InspectionRow = {
   completedAt?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  orderLocation?: InspectionOrderLocation | null;
   completedGroups: number;
   averageRating?: number | null;
   lowRatingGroups: number;
@@ -354,7 +356,8 @@ export default function InspectionsPage() {
         { label: t("employeesRegion"), value: detail.inspection.region },
         { label: t("inspectionProfile"), value: detail.inspection.profileName },
         { label: t("status"), value: t(`inspectionStatus${detail.inspection.status}`) },
-        { label: t("inspectionCoordinates"), value: detail.inspection.latitude != null && detail.inspection.longitude != null ? `${detail.inspection.latitude}, ${detail.inspection.longitude}` : "-" }
+        { label: t("inspectionCoordinates"), value: detail.inspection.latitude != null && detail.inspection.longitude != null ? `${detail.inspection.latitude}, ${detail.inspection.longitude}` : "-" },
+        ...(detail.inspection.mode === "ONLINE" ? [{ label: locale === "es" ? "Proximidad OT (100 m)" : "Order proximity (100 m)", value: inspectionLocationLabel(detail.inspection.orderLocation, locale) }] : [])
       ],
       groups: detail.groups.map((group) => ({
         name: t(`inspectionGroup${group.groupKey}`),
@@ -516,6 +519,7 @@ export default function InspectionsPage() {
           [t("status"), t(`inspectionStatus${detail.inspection.status}`)], [t("date"), new Date(detail.inspection.inspectionDate).toLocaleDateString(locale)],
           [t("inspectionCoordinates"), detail.inspection.latitude != null && detail.inspection.longitude != null ? `${detail.inspection.latitude}, ${detail.inspection.longitude}` : "—"]
         ].map(([label, value]) => <div key={label} className="rounded-lg border border-white/[0.08] bg-[#0b111b] p-3"><p className="text-xs uppercase text-slate-500">{label}</p><p className="mt-1 text-sm text-slate-100">{value}</p></div>)}</div>
+        {detail.inspection.mode === "ONLINE" && <p className={`mt-4 border-y border-white/10 py-3 text-sm ${detail.inspection.orderLocation?.status === "MATCH" ? "text-teal-200" : "text-amber-200"}`}>{locale === "es" ? "Proximidad OT (100 m): " : "Order proximity (100 m): "}{inspectionLocationLabel(detail.inspection.orderLocation, locale)}</p>}
         <h3 className="mt-6 text-base font-semibold">{t("inspectionGroupResults")}</h3>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{detail.groups.map((group) => <div key={group.id} className="rounded-lg border border-white/[0.08] bg-[#0b111b] p-4"><div className="flex items-center justify-between"><p className="font-medium">{t(`inspectionGroup${group.groupKey}`)}</p><span className="text-lg font-bold text-teal-300">{group.rating}/5</span></div><p className="mt-2 text-sm text-slate-400">{group.comment || t("inspectionNoComment")}</p><div className="mt-3 space-y-1 text-xs text-slate-500">{group.answers.map((answer) => <div key={answer.criterionKey} className="flex justify-between gap-3"><span>{t(`inspectionCriterion${answer.criterionKey}`)}</span><span className="text-right text-slate-300">{formatAnswer(answer)}</span></div>)}</div></div>)}</div>
         {!!detail.tools.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionTools")}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{detail.tools.map((tool) => <div key={tool.toolId} className={`rounded-lg border bg-[#0b111b] px-3 py-2 text-sm ${tool.hasTool ? "border-teal-400/20 text-teal-200" : "border-rose-400/20 text-rose-200"}`}>{tool.toolName}: {tool.hasTool ? t("yes") : t("no")}</div>)}</div></>}
