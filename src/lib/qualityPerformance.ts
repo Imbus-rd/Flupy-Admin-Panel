@@ -8,7 +8,7 @@ export type PerformanceMetrics = {
   photos: { value: number | null; complete: number; applicable: number };
   attendance: { value: number | null; entryDays: number; knownDays: number; onTimeDays: number };
   usage: { value: number | null; active: number; withPunch: number; withPhotos: number; withoutActivity: number };
-  retro: { submissions: number; positive: number | null; targetPerDay: number; daysWithActivity: number; daysWithSubmission: number; value: number | null; status: string };
+  retro: { submissions: number; positive: number | null; targetPerDay: number; daysWithActivity: number; daysWithSubmission: number; value: number | null; status: string; enabled?: boolean };
 };
 export type PerformancePerson = PerformanceMetrics & { id: string; card: string; name: string; matchedEmployee: boolean };
 export type QualityPerformance = {
