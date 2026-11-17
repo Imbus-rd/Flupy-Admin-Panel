@@ -17,9 +17,9 @@ export function normalizeClaroFilters(values: Partial<ClaroFilters>): ClaroFilte
   }
   return result;
 }
-export type ClaroMetrics = { total: number; evaluated: number; ok: number; notAttributable: number; okSamples: number; critical: number; nonCritical: number; pending: number; quality: number | null; okPercent: number | null };
+export type ClaroMetrics = { total: number; evaluated: number; ok: number; notAttributable: number; okSamples: number; critical: number; nonCritical: number; pending: number; quality: number | null; okPercent: number | null; flupyComparedSamples?: number; flupyUploadedSamples?: number | null; flupyUploadPercent?: number | null };
 export type ClaroGroup = ClaroMetrics & { id: string; name: string };
-export type ClaroMatch = { exists: boolean; records: number; photoCount: number; technicianCards: string[]; technicianMatch: "UNKNOWN" | "MATCH" | "MIXED" | "MISMATCH"; statuses: string[]; ids: string[] };
+export type ClaroMatch = { exists: boolean; records: number; photoCount: number; matchingPhotoCount?: number; technicianCards: string[]; technicianMatch: "UNKNOWN" | "MATCH" | "MIXED" | "MISMATCH"; statuses: string[]; ids: string[] };
 export type ClaroComparison = { flupy: ClaroMatch; online: ClaroMatch; offline: ClaroMatch };
 export type ClaroSample = { id: string; sourceId: string; motherOrder: string; childOrder: string; sampleDate: string; district: string; region: string; process: string; project: string; product: string; technology: string; technicianName: string; technicianCard: string; supervisorName: string; supervisorCard: string; initialState: string; finalState: string | null; comment: string; errorCodes: string; comparison?: ClaroComparison };
 export type ClaroReport = { filters: ClaroFilters; summary: ClaroMetrics; initial: ClaroMetrics; final: ClaroMetrics; latest: ClaroMetrics & { month: string | null }; monthly: (ClaroMetrics & { month: string })[]; byRegion: ClaroGroup[]; bySupervisor: ClaroGroup[]; byTechnician: ClaroGroup[]; byProcess: ClaroGroup[]; byProject: ClaroGroup[]; byProduct: ClaroGroup[]; rows: ClaroSample[]; formula: string; dateBasis: string; generatedAt: string; comparisonScope?: "COMPANY" | "AUTHORIZED" };
@@ -31,6 +31,11 @@ export type ClaroDetail = ClaroSample & { raw: Record<string, unknown>; history:
 export const claroState: Record<string, string> = { OK: "OK", NOT_ATTRIBUTABLE: "No imputable", CRITICAL: "Crítica", NON_CRITICAL: "No crítica", PENDING: "Pendiente" };
 export const claroProject: Record<string, string> = { INSTALACION: "Instalación", AVERIA: "Avería" };
 export const claroPercent = (value: number | null) => value == null ? "Sin muestra" : `${value.toFixed(2)}%`;
+export function claroFlupyCoverage(m: ClaroMetrics) {
+  return m.flupyUploadPercent == null
+    ? { label: m.total ? "No verificado" : "Sin muestra", count: null }
+    : { label: claroPercent(m.flupyUploadPercent), count: `${m.flupyUploadedSamples} / ${m.total} muestras` };
+}
 export const CLARO_GOAL = 96;
 export const claroGoal = (value: number | null) => value == null ? "Sin muestra" : value < CLARO_GOAL ? "Bajo la meta" : "Cumple la meta";
 export const claroQualityColor = (value: number | null) => value == null ? "text-slate-400" : value < CLARO_GOAL ? "text-red-400" : "text-teal-200";
@@ -88,9 +93,9 @@ export async function exportClaroReport(report: ClaroReport) {
     ws.columns.forEach(column => { column.width = 27; }); ws.views = [{ state: "frozen", ySplit: 1 }];
     ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: headings.length } }; return ws;
   }
-  sheet("Alcance", ["Campo", "Valor"], [...Object.entries(report.filters).map(([key, value]) => [key, Array.isArray(value) ? value.join("; ") || "Todos" : value]), ["Fórmula", report.formula], ["Fecha", report.dateBasis], ["Generado", report.generatedAt], ["Meta de calidad %", CLARO_GOAL], ["Cruce de órdenes", "Solo orden hija exacta, misma empresa, sin restringir fecha operativa. Cuenta fotos registradas; no garantiza disponibilidad del archivo."], ["Alcance del cruce", report.comparisonScope === "COMPANY" ? "Todas las regiones de la empresa" : "Solo registros autorizados. No encontrada no demuestra ausencia fuera de su alcance."], ["Reimportación", "Id de Claro + empresa. Se actualizan cambios y se conserva historial; no se elimina lo ausente del archivo."]]);
-  const headings = ["Grupo", "Muestras", "Evaluadas", "OK", "No imputables", "Muestras OK", "Críticas", "No críticas", "Pendientes", "Calidad ponderada %", "Muestras OK %", "Meta %", "Diferencia meta (pp)", "Cumplimiento meta"];
-  const values = (name: string, m: ClaroMetrics) => [name, m.total, m.evaluated, m.ok, m.notAttributable, m.okSamples, m.critical, m.nonCritical, m.pending, m.quality, m.okPercent, CLARO_GOAL, m.quality == null ? null : Number((m.quality - CLARO_GOAL).toFixed(2)), claroGoal(m.quality)];
+  sheet("Alcance", ["Campo", "Valor"], [...Object.entries(report.filters).map(([key, value]) => [key, Array.isArray(value) ? value.join("; ") || "Todos" : value]), ["Fórmula", report.formula], ["Fecha", report.dateBasis], ["Generado", report.generatedAt], ["Meta de calidad %", CLARO_GOAL], ["Cruce de órdenes", "Solo orden hija exacta, misma empresa, sin restringir fecha operativa. Cuenta fotos registradas; no garantiza disponibilidad del archivo."], ["Muestras en Flupy Time %", "Muestras cuya orden hija tiene al menos una foto registrada en una orden del mismo técnico / todas las muestras × 100. Incluye muestras pendientes. Cada muestra cuenta una vez; no es completitud de fotos ni disponibilidad del archivo. Excluye QR Online/Offline."], ["Alcance del cruce", report.comparisonScope === "COMPANY" ? "Todas las regiones de la empresa" : "Solo registros autorizados. No encontrada no demuestra ausencia fuera de su alcance."], ["Reimportación", "Id de Claro + empresa. Se actualizan cambios y se conserva historial; no se elimina lo ausente del archivo."]]);
+  const headings = ["Grupo", "Muestras", "Evaluadas", "OK", "No imputables", "Muestras OK", "Críticas", "No críticas", "Pendientes", "Calidad ponderada %", "Muestras OK %", "Meta %", "Diferencia meta (pp)", "Cumplimiento meta", "Muestras con fotos del técnico en Flupy Time", "Muestras en Flupy Time %"];
+  const values = (name: string, m: ClaroMetrics) => [name, m.total, m.evaluated, m.ok, m.notAttributable, m.okSamples, m.critical, m.nonCritical, m.pending, m.quality, m.okPercent, CLARO_GOAL, m.quality == null ? null : Number((m.quality - CLARO_GOAL).toFixed(2)), claroGoal(m.quality), m.flupyUploadedSamples ?? null, m.flupyUploadPercent ?? null];
   sheet("Resumen", headings, [values("Resultado seleccionado", report.summary), values("Estado inicial", report.initial), values("Estado final", report.final)]);
   sheet("Mensual", headings, report.monthly.map(m => values(m.month, m)));
   for (const [name, rows] of [["Regiones", report.byRegion], ["Supervisores", report.bySupervisor], ["Técnicos", report.byTechnician], ["Procesos", report.byProcess], ["Proyectos", report.byProject], ["Productos", report.byProduct]] as const) sheet(name, headings, rows.map(m => values(m.name, m)));
@@ -102,6 +107,7 @@ export async function exportClaroReport(report: ClaroReport) {
     })]));
   detail.getColumn(4).numFmt = "dd/mm/yyyy";
   for (const ws of workbook.worksheets.filter(w => !["Alcance", "Muestras"].includes(w.name))) {
+    ws.getColumn(16).numFmt = '0.00"%"';
     ws.getColumn(10).numFmt = '0.00"%"'; ws.getColumn(11).numFmt = '0.00"%"'; ws.getColumn(13).numFmt = '0.00';
     ws.eachRow((row, i) => {
       if (i <= 1 || typeof row.getCell(10).value !== "number") return;

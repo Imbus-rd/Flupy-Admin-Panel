@@ -13,8 +13,16 @@ function load(file) {
   return module.exports;
 }
 const { claroChart } = load('claroChart');
-const { claroGoal, CLARO_GOAL, claroQuery, normalizeClaroFilters, emptyClaroFilters } = load('claroQuality');
+const { claroGoal, CLARO_GOAL, claroQuery, normalizeClaroFilters, emptyClaroFilters, claroFlupyCoverage } = load('claroQuality');
 const month = (m, quality) => ({ month: m, quality, evaluated: quality == null ? 0 : 1 });
+
+test('upload coverage displays two decimals, matching sample counts and safe fallback for an older backend', () => {
+  assert.equal(claroFlupyCoverage({ total: 3, flupyUploadedSamples: 2, flupyUploadPercent: 66.67 }).label, '66.67%');
+  assert.equal(claroFlupyCoverage({ total: 3, flupyUploadedSamples: 2, flupyUploadPercent: 66.67 }).count, '2 / 3 muestras');
+  assert.equal(claroFlupyCoverage({ total: 3, flupyUploadedSamples: 0, flupyUploadPercent: 0 }).label, '0.00%');
+  assert.equal(claroFlupyCoverage({ total: 3 }).label, 'No verificado');
+  assert.equal(claroFlupyCoverage({ total: 0, flupyUploadPercent: null }).label, 'Sin muestra');
+});
 
 test('the target is 96 and absence is not a failed score', () => {
   assert.equal(CLARO_GOAL, 96); assert.equal(claroGoal(95.99), 'Bajo la meta');
