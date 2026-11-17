@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarDateField } from "@/components/CalendarDateField";
 import { InspectionPhotoLightbox } from "@/components/InspectionPhotoLightbox";
+import { OnlineInspectionTargets } from "@/components/OnlineInspectionTargets";
 import { apiFetch, ApiError, mediaUrl } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { useI18n } from "@/lib/i18n";
@@ -171,6 +172,7 @@ export default function InspectionsPage() {
   const [detail, setDetail] = useState<InspectionDetail | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
   const [photoViewerIndex, setPhotoViewerIndex] = useState<number | null>(null);
+  const [targetsRefresh, setTargetsRefresh] = useState(0);
 
   const loadOptions = useCallback(async () => {
     if (!token) return;
@@ -208,6 +210,7 @@ export default function InspectionsPage() {
   }, [token, load, loadOptions]);
 
   async function refresh() {
+    setTargetsRefresh(value => value + 1);
     await Promise.all([loadOptions(), load(filters)]);
   }
 
@@ -441,6 +444,8 @@ export default function InspectionsPage() {
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {cards.map(([key, value, color]) => <div key={String(key)} className="ui-card p-4"><p className="text-xs uppercase text-slate-500">{t(String(key))}</p><p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p></div>)}
     </section>
+
+    {mode === "ONLINE" && <OnlineInspectionTargets refreshKey={targetsRefresh} />}
 
     {mode === "OFFLINE" && <>
       <section className="ui-card p-5">
