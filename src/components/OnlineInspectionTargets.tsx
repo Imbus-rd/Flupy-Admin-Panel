@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Download, RefreshCw } from "lucide-react";
 import { CalendarDateField } from "@/components/CalendarDateField";
+import { FilterMultiSelect } from "@/components/FilterMultiSelect";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { useI18n } from "@/lib/i18n";
@@ -13,7 +14,7 @@ export function OnlineInspectionTargets({ refreshKey = 0 }: { refreshKey?: numbe
   const { token } = useAuth();
   const { locale } = useI18n();
   const es = locale === "es";
-  const [filters, setFilters] = useState<OnlineTargetFilters>(() => ({ period: "MONTH", date: onlineTargetToday(), region: "", supervisorId: "" }));
+  const [filters, setFilters] = useState<OnlineTargetFilters>(() => ({ period: "MONTH", date: onlineTargetToday(), region: "", supervisorId: [], process: "" }));
   const [data, setData] = useState<OnlineTargets | null>(null);
   const [regions, setRegions] = useState<string[]>([]);
   const [supervisors, setSupervisors] = useState<OnlineTargets["options"]["supervisors"]>([]);
@@ -57,7 +58,7 @@ export function OnlineInspectionTargets({ refreshKey = 0 }: { refreshKey?: numbe
         if (title === "Detalle diario") sheet.getColumn(5).numFmt = "0.00";
       };
       add("Objetivos QR Online", values.headings, values.rows);
-      add("Detalle diario", ["Supervisor", "Tarjeta", "Región", "Fecha", "Meta proporcional", "QR Online completados"], values.daily);
+      add("Detalle diario", ["Supervisor", "Tarjeta", "Región", "Fecha", "Meta proporcional", "QR Online completados", "Proceso"], values.daily);
       const buffer = await book.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buffer as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
       const link = document.createElement("a"); link.href = url;
@@ -79,12 +80,14 @@ export function OnlineInspectionTargets({ refreshKey = 0 }: { refreshKey?: numbe
       {(["MONTH", "WEEK", "DAY"] as const).map((period, i) => <button key={period} type="button" aria-pressed={filters.period === period} onClick={() => setFilters(f => ({ ...f, period }))}
         className={`min-h-10 rounded px-4 text-sm transition-colors ${filters.period === period ? "bg-teal-400/15 text-teal-200" : "text-slate-400 hover:text-white"}`}>{(es ? ["Mes", "Semana", "Día"] : ["Month", "Week", "Day"])[i]}</button>)}
     </div>
-    <div className="grid min-w-0 gap-3 md:grid-cols-3">
+    <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
       <CalendarDateField id="online-target-date" label={es ? "Fecha de referencia del objetivo" : "Target reference date"} value={filters.date} onChange={value => { if (value) setFilters(f => ({ ...f, date: value })); }} openLabel={es ? "Abrir calendario del objetivo" : "Open target calendar"} />
-      <label className="min-w-0 text-xs text-slate-400">{es ? "Región del objetivo" : "Target region"}<select aria-label={es ? "Región del objetivo" : "Target region"} className={field + " mt-1.5"} value={filters.region} onChange={e => setFilters(f => ({ ...f, region: e.target.value, supervisorId: "" }))}><option value="">{es ? "Todas las regiones disponibles" : "All available regions"}</option>{regions.map(r => <option key={r}>{r}</option>)}</select></label>
-      <label className="min-w-0 text-xs text-slate-400">{es ? "Supervisor del objetivo" : "Target supervisor"}<select aria-label={es ? "Supervisor del objetivo" : "Target supervisor"} className={field + " mt-1.5"} value={filters.supervisorId} onChange={e => setFilters(f => ({ ...f, supervisorId: e.target.value }))}><option value="">{es ? "Todos los supervisores" : "All supervisors"}</option>{supervisors.map(s => <option key={s.id} value={s.id}>{s.name} · {s.card}</option>)}</select></label>
+      <label className="min-w-0 text-xs text-slate-400">{es ? "Región del objetivo" : "Target region"}<select aria-label={es ? "Región del objetivo" : "Target region"} className={field + " mt-1.5"} value={filters.region} onChange={e => setFilters(f => ({ ...f, region: e.target.value, supervisorId: [] }))}><option value="">{es ? "Todas las regiones disponibles" : "All available regions"}</option>{regions.map(r => <option key={r}>{r}</option>)}</select></label>
+      <FilterMultiSelect label={es ? "Supervisor del objetivo" : "Target supervisor"} options={supervisors.map(s => ({ id: s.id, name: s.name + " · " + s.card }))} value={filters.supervisorId} onChange={supervisorId => setFilters(f => ({ ...f, supervisorId }))} />
+      <label className="min-w-0 text-xs text-slate-400">{es ? "Proceso del objetivo" : "Target process"}<select aria-label={es ? "Proceso del objetivo" : "Target process"} className={field + " mt-1.5"} value={filters.process} onChange={e => setFilters(f => ({ ...f, process: e.target.value }))}><option value="">{es ? "Todos los procesos" : "All processes"}</option><option value="INSTALLATION">{es ? "Instalación" : "Installation"}</option><option value="REPAIR">{es ? "Avería" : "Repair"}</option><option value="UNCLASSIFIED">{es ? "Sin clasificar" : "Unclassified"}</option></select></label>
     </div>
     {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
+    {filters.process && <p className="text-xs text-slate-400">{es ? "Meta de 60 por supervisor, no adicional por proceso. Proceso según el perfil técnico de la inspección." : "Target of 60 per supervisor, not an additional process quota. Process follows the inspection technician profile."}</p>}
     {busy && <p role="status" className="text-sm text-slate-400">{es ? "Consultando cumplimiento…" : "Loading target results…"}</p>}
     {data && <>
       <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-400">

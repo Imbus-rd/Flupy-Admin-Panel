@@ -6,14 +6,15 @@ const path = require('node:path');
 const ts = require('typescript');
 const source = fs.readFileSync(path.join(__dirname, '../src/lib/onlineInspectionTargets.ts'), 'utf8');
 const moduleValue = { exports: {} };
-vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText,
+vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
   { module: moduleValue, exports: moduleValue.exports, URLSearchParams, Intl, Date });
 const { onlineTargetQuery, onlineTargetScale, onlineTargetExport } = moduleValue.exports;
 
 test('target requests have their own explicit period and encode regional and supervisor filters', () => {
-  const p = new URLSearchParams(onlineTargetQuery({ period: 'WEEK', date: '2026-11-17', region: 'Este & Sur', supervisorId: 'sup/1' }));
+  const p = new URLSearchParams(onlineTargetQuery({ period: 'WEEK', date: '2026-11-17', region: 'Este & Sur', supervisorId: ['sup/1', 'sup/2', 'sup/1'], process: 'REPAIR' }));
   assert.equal(p.get('period'), 'WEEK'); assert.equal(p.get('date'), '2026-11-17');
   assert.equal(p.get('region'), 'Este & Sur'); assert.equal(p.get('supervisorId'), 'sup/1');
+  assert.deepEqual(p.getAll('supervisorId'), ['sup/1', 'sup/2']); assert.equal(p.get('process'), 'REPAIR');
   assert.equal(p.has('fromDate'), false);
 });
 
@@ -26,7 +27,7 @@ test('bars share a single scale for actuals and targets and retain zero progress
 });
 
 test('Excel preserves numeric targets, historical snapshots, zero activity and the explicit period', () => {
-  const out = onlineTargetExport({ monthlyGoal: 60, period: { fromDate: '2026-11-16', toDate: '2026-11-20', workdays: 5 },
+  const out = onlineTargetExport({ monthlyGoal: 60, filters: { process: 'REPAIR' }, period: { fromDate: '2026-11-16', toDate: '2026-11-20', workdays: 5 },
     rows: [{ name: 'Supervisor', card: '001', region: 'Este', target: 14.29, completed: 0, percent: 0, remaining: 14.29,
       historical: true, daily: [{ date: '2026-11-17', target: 60 / 21, completed: 0 }] }] });
   assert.equal(out.headings.length, out.rows[0].length);
@@ -34,4 +35,5 @@ test('Excel preserves numeric targets, historical snapshots, zero activity and t
   assert.equal(out.rows[0][8], 0); assert.equal(out.rows[0][9], 0);
   assert.equal(out.rows[0][11], 'Sí'); assert.equal(out.daily[0][4], 60 / 21);
   assert.equal(out.rows[0][3], '2026-11-16');
+  assert.equal(out.rows[0][12], 'Avería'); assert.equal(out.daily[0][6], 'Avería');
 });

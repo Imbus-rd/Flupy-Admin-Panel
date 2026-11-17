@@ -1,4 +1,4 @@
-export type OnlineTargetFilters = { period: "MONTH" | "WEEK" | "DAY"; date: string; region: string; supervisorId: string };
+export type OnlineTargetFilters = { period: "MONTH" | "WEEK" | "DAY"; date: string; region: string; supervisorId: string[]; process: string };
 export type OnlineTargetRow = {
   id: string; card: string; name: string; region: string; historical: boolean;
   completed: number; target: number | null; remaining: number | null; percent: number | null;
@@ -14,7 +14,10 @@ export type OnlineTargets = {
 
 export function onlineTargetQuery(filters: OnlineTargetFilters) {
   const query = new URLSearchParams();
-  Object.entries(filters).forEach(([key, value]) => { if (value) query.set(key, value); });
+  Object.entries(filters).forEach(([key, value]) => {
+    if (Array.isArray(value)) [...new Set(value)].filter(Boolean).forEach(v => query.append(key, v));
+    else if (value) query.set(key, value);
+  });
   return query.toString();
 }
 
@@ -25,10 +28,11 @@ export function onlineTargetScale(rows: OnlineTargetRow[]) {
 
 export function onlineTargetExport(data: OnlineTargets) {
   const headings = ["Supervisor", "Tarjeta", "Región", "Desde", "Hasta", "Meta mensual", "Días lunes a viernes",
-    "Meta del período", "QR Online completados", "Cumplimiento %", "Faltantes", "Registro histórico"];
+    "Meta del período", "QR Online completados", "Cumplimiento %", "Faltantes", "Registro histórico", "Proceso"];
+  const process = ({ INSTALLATION: "Instalación", REPAIR: "Avería", UNCLASSIFIED: "Sin clasificar" } as Record<string, string>)[data.filters.process] || "Todos";
   const rows = data.rows.map(r => [r.name, r.card, r.region, data.period.fromDate, data.period.toDate,
-    data.monthlyGoal, data.period.workdays, r.target, r.completed, r.percent, r.remaining, r.historical ? "Sí" : "No"]);
-  const daily = data.rows.flatMap(r => r.daily.map(d => [r.name, r.card, r.region, d.date, d.target, d.completed]));
+    data.monthlyGoal, data.period.workdays, r.target, r.completed, r.percent, r.remaining, r.historical ? "Sí" : "No", process]);
+  const daily = data.rows.flatMap(r => r.daily.map(d => [r.name, r.card, r.region, d.date, d.target, d.completed, process]));
   return { headings, rows, daily };
 }
 
