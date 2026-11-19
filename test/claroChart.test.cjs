@@ -13,6 +13,7 @@ function load(file) {
   return module.exports;
 }
 const { claroChart } = load('claroChart');
+const { claroPreviousYearFilters, shiftClaroYear } = load('claroYearComparison');
 const { claroGoal, CLARO_GOAL, claroQuery, normalizeClaroFilters, emptyClaroFilters, claroFlupyCoverage } = load('claroQuality');
 const month = (m, quality) => ({ month: m, quality, evaluated: quality == null ? 0 : 1 });
 
@@ -86,4 +87,48 @@ test('long monthly ranges expand the chart so labels cannot crowd adjacent month
   assert.ok(c.width > 920);
   for (let i = 1; i < c.points.length; i++) assert.ok(c.points[i].x - c.points[i - 1].x >= 77.99);
   assert.ok(c.points[0].x >= 42); assert.ok(c.width - c.points.at(-1).x >= 42);
+});
+
+test('previous year preserves all applied facets and clamps leap days rather than changing months', () => {
+  const filters = { ...emptyClaroFilters, fromDate: '2024-02-29', toDate: '2024-03-17', region: ['ESTE'], supervisorCard: ['001'], technicianCard: ['002'], process: 'IN', result: ['OK'], state: 'initial' };
+  const before = JSON.stringify(filters);
+  const previous = claroPreviousYearFilters({ filters, monthly: [] });
+  assert.equal(previous.fromDate, '2023-02-28'); assert.equal(previous.toDate, '2023-03-17');
+  for (const key of ['region', 'supervisorCard', 'technicianCard', 'process', 'result', 'state']) assert.equal(previous[key], filters[key]);
+  assert.equal(JSON.stringify(filters), before);
+  assert.equal(shiftClaroYear('2025-01-01', -1), '2024-01-01');
+  assert.throws(() => shiftClaroYear('2024-02-31', -1));
+  assert.equal(claroPreviousYearFilters({ filters: emptyClaroFilters, monthly: [] }), null);
+});
+
+test('unbounded reports derive comparison dates from actual sample months', () => {
+  const previous = claroPreviousYearFilters({ filters: emptyClaroFilters, monthly: [month('2026-02', 97), month('2026-01', 98)] });
+  assert.equal(previous.fromDate, '2025-01-01'); assert.equal(previous.toDate, '2025-02-28');
+  const leap = claroPreviousYearFilters({ filters: { ...emptyClaroFilters, fromDate: '2025-02-01', toDate: '2025-02-28' }, monthly: [] });
+  assert.equal(leap.fromDate, '2024-02-01'); assert.equal(leap.toDate, '2024-02-29');
+});
+
+test('previous January aligns with January, scales both series and keeps absent months as gaps', () => {
+  const c = claroChart([month('2026-01', 98), month('2026-03', 97)], {
+    fromDate: '2026-01-01', toDate: '2026-04-30', previousMonths: [month('2025-01', 50), month('2025-02', 99), month('2025-04', 96), month('2024-03', 100)]
+  });
+  assert.equal(c.points.length, 4); assert.equal(c.previousPoints.length, 4);
+  assert.deepEqual(Array.from(c.previousPoints, p => p.month), ['2025-01', '2025-02', '2025-03', '2025-04']);
+  assert.equal(c.previousPoints[0].x, c.points[0].x);
+  assert.equal(c.previousPoints[2].y, null); assert.equal(c.previousPoints[2].label, 'Sin muestra');
+  assert.equal(c.previousSegments.length, 1); assert.equal(c.min, 40);
+  assert.equal(c.previousPoints[0].color, '#f87171');
+});
+
+test('cross-year ranges compare each month to its own previous year without wrapping or averaging', () => {
+  const c = claroChart([month('2025-12', 97), month('2026-01', 98)], { previousMonths: [month('2024-12', 90), month('2025-01', 100)] });
+  assert.equal(c.previousPoints[0].quality, 90); assert.equal(c.previousPoints[1].quality, 100);
+  assert.equal(c.previousSegments.length, 1);
+});
+
+test('comparison can render prior samples even if the selected period has none; disabling restores one series', () => {
+  const c = claroChart([], { fromDate: '2026-01-01', toDate: '2026-02-28', previousMonths: [month('2025-01', 97)] });
+  assert.equal(c.points[0].quality, null); assert.equal(c.previousPoints[0].quality, 97);
+  const normal = claroChart([month('2026-01', 97)]);
+  assert.equal(normal.previousPoints.length, 0); assert.equal(normal.previousSegments.length, 0);
 });

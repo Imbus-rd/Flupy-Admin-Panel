@@ -1,21 +1,28 @@
 import { CLARO_GOAL, claroPercent } from "./claroQuality";
 
 export type ClaroMonth = { month: string; quality: number | null; evaluated: number };
-export function claroChart(months: ClaroMonth[]) {
+export type ClaroChartOptions = { previousMonths?: ClaroMonth[]; fromDate?: string; toDate?: string };
+const priorMonth = (month: string) => `${Number(month.slice(0, 4)) - 1}-${month.slice(5, 7)}`;
+export function claroChart(months: ClaroMonth[], options: ClaroChartOptions = {}) {
   const valid = months.filter(m => /^\d{4}-\d{2}$/.test(m.month)).sort((a, b) => a.month.localeCompare(b.month));
   const entries: ClaroMonth[] = [];
-  if (valid.length) {
+  const start = options.fromDate?.slice(0, 7) || valid[0]?.month;
+  const end = options.toDate?.slice(0, 7) || valid.at(-1)?.month || start;
+  if (start && end) {
     const byMonth = new Map(valid.map(m => [m.month, m]));
-    const cursor = new Date(valid[0].month + "-01T00:00:00Z"), end = valid.at(-1)!.month;
+    const cursor = new Date(start + "-01T00:00:00Z");
     while (cursor.toISOString().slice(0, 7) <= end && entries.length < 122) {
       const month = cursor.toISOString().slice(0, 7);
       entries.push(byMonth.get(month) || { month, quality: null, evaluated: 0 });
       cursor.setUTCMonth(cursor.getUTCMonth() + 1);
     }
   }
-  const height = 300, left = 58, right = 42, top = 44, bottom = 58;
+  const comparing = options.previousMonths !== undefined;
+  const previousByMonth = new Map(options.previousMonths?.map(m => [m.month, m]));
+  const previousEntries = entries.map(m => previousByMonth.get(priorMonth(m.month)) || { month: priorMonth(m.month), quality: null, evaluated: 0 });
+  const height = comparing ? 340 : 300, left = 58, right = 42, top = 44, bottom = comparing ? 80 : 58;
   const width = Math.max(920, (entries.length - 1) * 78 + left + right);
-  const scores = entries.flatMap(m => m.quality == null ? [] : [m.quality]);
+  const scores = [...entries, ...(comparing ? previousEntries : [])].flatMap(m => m.quality == null ? [] : [m.quality]);
   const min = Math.max(0, Math.min(90, Math.floor(Math.min(CLARO_GOAL, ...scores) / 10) * 10 - 10));
   const y = (value: number) => top + (100 - value) / (100 - min) * (height - top - bottom);
   const points = entries.map((m, i) => ({
@@ -25,6 +32,19 @@ export function claroChart(months: ClaroMonth[]) {
     label: claroPercent(m.quality),
     color: m.quality == null ? "#94a3b8" : m.quality < CLARO_GOAL ? "#f87171" : "#2dd4bf"
   }));
+  const previousPoints = comparing ? previousEntries.map((m, i) => ({
+    ...m, alignedMonth: entries[i].month, x: points[i].x, y: m.quality == null ? null : y(m.quality),
+    labelY: m.quality == null ? height - bottom + 30 : y(m.quality) + 22,
+    label: claroPercent(m.quality), color: m.quality == null ? "#94a3b8" : m.quality < CLARO_GOAL ? "#f87171" : "#93c5fd"
+  })) : [];
+  previousPoints.forEach((p, i) => {
+    if (p.y != null && Math.abs(p.labelY - points[i].labelY) < 16) p.labelY = p.y - 18;
+  });
+  const previousSegments: { x1: number; y1: number; x2: number; y2: number }[] = [];
+  for (let i = 1; i < previousPoints.length; i++) {
+    const a = previousPoints[i - 1], b = previousPoints[i];
+    if (a.y != null && b.y != null) previousSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+  }
   const segments: { x1: number; y1: number; x2: number; y2: number; color: string }[] = [];
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1], b = points[i];
@@ -34,11 +54,11 @@ export function claroChart(months: ClaroMonth[]) {
       segments.push({ x1: a.x, y1: a.y, x2: x, y2: y(CLARO_GOAL), color: a.quality < CLARO_GOAL ? "#f87171" : "#2dd4bf" }, { x1: x, y1: y(CLARO_GOAL), x2: b.x, y2: b.y, color: b.quality < CLARO_GOAL ? "#f87171" : "#2dd4bf" });
     } else segments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, color: a.quality < CLARO_GOAL ? "#f87171" : "#2dd4bf" });
   }
-  return { width, height, left, right, top, bottom, min, y, goalY: y(CLARO_GOAL), points, segments, ticks: [min, min + (100 - min) / 2, 100] };
+  return { width, height, left, right, top, bottom, min, y, goalY: y(CLARO_GOAL), points, segments, previousPoints, previousSegments, ticks: [min, min + (100 - min) / 2, 100] };
 }
 
-export async function claroChartImage(months: ClaroMonth[]) {
-  const c = claroChart(months), canvas = document.createElement("canvas");
+export async function claroChartImage(months: ClaroMonth[], options: ClaroChartOptions = {}) {
+  const c = claroChart(months, options), canvas = document.createElement("canvas");
   canvas.width = c.width * 2; canvas.height = c.height * 2;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("No fue posible generar la gráfica para Excel.");
@@ -47,6 +67,18 @@ export async function claroChartImage(months: ClaroMonth[]) {
   for (const tick of c.ticks) { ctx.fillText(`${tick}%`, 8, c.y(tick) + 4); ctx.strokeStyle = "#334155"; ctx.beginPath(); ctx.moveTo(c.left, c.y(tick)); ctx.lineTo(c.width - c.right, c.y(tick)); ctx.stroke(); }
   ctx.strokeStyle = "#fbbf24"; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(c.left, c.goalY); ctx.lineTo(c.width - c.right, c.goalY); ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle = "#fbbf24"; ctx.fillText(`Meta ${CLARO_GOAL}%`, c.width - 115, 18);
+  if (options.previousMonths !== undefined) {
+    ctx.fillStyle = "#2dd4bf"; ctx.fillText("Período seleccionado (continua)", c.left, 18);
+    ctx.fillStyle = "#93c5fd"; ctx.fillText("Año anterior (discontinua)", c.left + 280, 18);
+  }
+  ctx.strokeStyle = "#60a5fa"; ctx.lineWidth = 2; ctx.setLineDash([7, 5]);
+  for (const s of c.previousSegments) { ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke(); }
+  ctx.setLineDash([]);
+  c.previousPoints.forEach(p => {
+    if (p.y != null) { ctx.fillStyle = "#60a5fa"; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 2 * Math.PI); ctx.fill(); }
+    ctx.textAlign = "center"; ctx.font = "bold 12px Arial"; ctx.strokeStyle = "#0b111c"; ctx.lineWidth = 4;
+    ctx.strokeText(p.label, p.x, p.labelY); ctx.fillStyle = p.color; ctx.fillText(p.label, p.x, p.labelY);
+  });
   for (const s of c.segments) { ctx.strokeStyle = s.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke(); }
   c.points.forEach(p => {
     if (p.y != null) { ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI); ctx.fill(); }

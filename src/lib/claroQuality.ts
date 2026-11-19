@@ -83,7 +83,7 @@ export async function readClaroWorkbook(file: File): Promise<ClaroImport> {
   throw new Error("No se encontró el reporte detallado con Id, Mes de la muestra (o Mes), Distrito y Estado inicial. El reporte de avance solo sirve como referencia de resultados.");
 }
 
-export async function exportClaroReport(report: ClaroReport) {
+export async function exportClaroReport(report: ClaroReport, comparison?: import("./claroYearComparison").ClaroYearComparison) {
   const ExcelJS = await import("exceljs"); const workbook = new ExcelJS.Workbook();
   workbook.creator = "Flupy Time";
   function sheet(name: string, headings: string[], rows: (string | number | null | Date)[][]) {
@@ -98,6 +98,19 @@ export async function exportClaroReport(report: ClaroReport) {
   const values = (name: string, m: ClaroMetrics) => [name, m.total, m.evaluated, m.ok, m.notAttributable, m.okSamples, m.critical, m.nonCritical, m.pending, m.quality, m.okPercent, CLARO_GOAL, m.quality == null ? null : Number((m.quality - CLARO_GOAL).toFixed(2)), claroGoal(m.quality), m.flupyUploadedSamples ?? null, m.flupyUploadPercent ?? null];
   sheet("Resumen", headings, [values("Resultado seleccionado", report.summary), values("Estado inicial", report.initial), values("Estado final", report.final)]);
   sheet("Mensual", headings, report.monthly.map(m => values(m.month, m)));
+  if (comparison) {
+    sheet("Mensual año anterior", headings, comparison.monthly.map(m => values(m.month, m)));
+    const { claroChart } = await import("./claroChart");
+    const aligned = claroChart(report.monthly, { previousMonths: comparison.monthly, fromDate: report.filters.fromDate, toDate: report.filters.toDate });
+    const annual = sheet("Comparación anual", ["Mes seleccionado", "Calidad seleccionada %", "Muestras evaluadas", "Mes año anterior", "Calidad año anterior %", "Muestras evaluadas año anterior", "Diferencia (pp)"],
+      aligned.points.map((m, i) => { const p = aligned.previousPoints[i]; return [m.month, m.quality, m.evaluated, p.month, p.quality, p.evaluated, m.quality == null || p.quality == null ? null : Number((m.quality - p.quality).toFixed(2))]; }));
+    annual.getColumn(2).numFmt = '0.00"%"'; annual.getColumn(5).numFmt = '0.00"%"'; annual.getColumn(7).numFmt = '0.00';
+    annual.eachRow((row, index) => {
+      if (index <= 1) return;
+      for (const column of [2, 5]) if (typeof row.getCell(column).value === "number") row.getCell(column).font = { bold: true, color: { argb: Number(row.getCell(column).value) < CLARO_GOAL ? "FFB91C1C" : "FF0F766E" } };
+    });
+    workbook.getWorksheet("Alcance")!.addRow(["Comparación anual", `${comparison.filters.fromDate} / ${comparison.filters.toDate}. Mismos filtros aplicados; meses alineados con el año anterior. Sin muestra no equivale a cero.`]);
+  }
   for (const [name, rows] of [["Regiones", report.byRegion], ["Supervisores", report.bySupervisor], ["Técnicos", report.byTechnician], ["Procesos", report.byProcess], ["Proyectos", report.byProject], ["Productos", report.byProduct]] as const) sheet(name, headings, rows.map(m => values(m.name, m)));
   const sources = [["flupy", "Flupy Time"], ["online", "QR Online"], ["offline", "QR Offline"]] as const;
   const detail = sheet("Muestras", ["Id Claro", "Orden madre", "Orden hija", "Fecha Mes", "Distrito", "Región", "Supervisor", "Tarjeta supervisor", "Técnico", "Tarjeta técnico", "Proceso", "Proyecto", "Producto", "Tecnología", "Estado inicial", "Estado final", "Comentario", "Códigos de error", ...sources.flatMap(([, name]) => [name + " existe", name + " registros", name + " fotos", name + " tarjeta coincide", name + " tarjetas", name + " estados", name + " identificadores"])],
@@ -106,7 +119,7 @@ export async function exportClaroReport(report: ClaroReport) {
       return [!match ? "No verificado" : match.exists ? "Sí" : "No encontrada", match?.records ?? null, match?.photoCount ?? null, match ? claroMatchLabel[match.technicianMatch] : "No verificado", match?.technicianCards.join("; ") || "", match?.statuses.map(s => claroOperationalState[s] || s).join("; ") || "", match?.ids.join("; ") || ""];
     })]));
   detail.getColumn(4).numFmt = "dd/mm/yyyy";
-  for (const ws of workbook.worksheets.filter(w => !["Alcance", "Muestras"].includes(w.name))) {
+  for (const ws of workbook.worksheets.filter(w => !["Alcance", "Muestras", "Comparación anual"].includes(w.name))) {
     ws.getColumn(16).numFmt = '0.00"%"';
     ws.getColumn(10).numFmt = '0.00"%"'; ws.getColumn(11).numFmt = '0.00"%"'; ws.getColumn(13).numFmt = '0.00';
     ws.eachRow((row, i) => {
@@ -115,12 +128,13 @@ export async function exportClaroReport(report: ClaroReport) {
       for (const index of [10, 13, 14]) { row.getCell(index).font = { bold: true, color: { argb: below ? "FFB91C1C" : "FF0F766E" } }; if (below) row.getCell(index).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } }; }
     });
   }
-  if (report.monthly.length) {
+  if (report.monthly.length || comparison?.monthly.length) {
     const { claroChartImage, claroChart } = await import("./claroChart");
-    const chart = claroChart(report.monthly);
+    const chartOptions = { previousMonths: comparison?.monthly, fromDate: report.filters.fromDate, toDate: report.filters.toDate };
+    const chart = claroChart(report.monthly, chartOptions);
     const graph = workbook.addWorksheet("Gráfica mensual");
     graph.getCell("A1").value = `Calidad mensual · meta ${CLARO_GOAL}% · ${report.filters.fromDate} / ${report.filters.toDate}`;
-    graph.addImage(workbook.addImage({ base64: await claroChartImage(report.monthly), extension: "png" }), { tl: { col: 0, row: 2 }, ext: { width: chart.width, height: chart.height } });
+    graph.addImage(workbook.addImage({ base64: await claroChartImage(report.monthly, chartOptions), extension: "png" }), { tl: { col: 0, row: 2 }, ext: { width: chart.width, height: chart.height } });
     graph.pageSetup = { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1, printArea: `A1:${graph.getColumn(Math.ceil(chart.width / 64)).letter}20` };
   }
   const data = await workbook.xlsx.writeBuffer(); const url = URL.createObjectURL(new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
