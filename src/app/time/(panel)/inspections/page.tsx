@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarDateField } from "@/components/CalendarDateField";
 import { InspectionPhotoLightbox } from "@/components/InspectionPhotoLightbox";
+import { InspectionPhotoReview } from "@/components/InspectionPhotoReview";
+import { inspectionPhotoReview, inspectionPhotoTitle, inspectionFindingCount, type InspectionReviewPhoto } from "@/lib/inspectionPhotoReview";
 import { OnlineInspectionTargets } from "@/components/OnlineInspectionTargets";
 import { apiFetch, ApiError, mediaUrl } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
@@ -54,6 +56,8 @@ type InspectionRow = {
   lowRatingGroups: number;
   photoCount: number;
   missingTools: number;
+  photoFindingCount?: number;
+  findingsCount?: number;
   okSamples: number;
   criticalSamples: number;
   evaluatedSamples: number;
@@ -106,7 +110,7 @@ type InspectionDetail = {
       valueNumber?: number | null;
     }[];
   }[];
-  photos: { id: string; photoType: string; photoUrl: string; capturedAt: string }[];
+  photos: InspectionReviewPhoto[];
   tools: { toolId: string; toolName: string; required: boolean; hasTool: boolean }[];
 };
 
@@ -263,7 +267,7 @@ export default function InspectionsPage() {
       profile: row.profileName,
       status: t(`inspectionStatus${row.status}`),
       average: row.averageRating ?? "",
-      findings: row.lowRatingGroups,
+      findings: inspectionFindingCount(row),
       missingTools: row.missingTools,
       photos: row.photoCount,
       coordinates: row.latitude != null && row.longitude != null ? `${row.latitude}, ${row.longitude}` : "",
@@ -335,6 +339,13 @@ export default function InspectionsPage() {
       title: `${t("inspectionMissingToolFinding")}: ${tool.toolName}`,
       comment: detail.groups.find((group) => group.groupKey === "TOOLS")?.comment || t("inspectionNoComment")
     }));
+    detail.photos.forEach(photo => {
+      const review = inspectionPhotoReview(photo, locale);
+      if (review.finding) findings.push({
+        title: `${inspectionPhotoTitle(photo, t(`inspectionPhoto${photo.photoType}`), locale)} - ${review.label}`,
+        comment: review.comment || t("inspectionNoComment")
+      });
+    });
     const date = new Date(detail.inspection.inspectionDate).toLocaleDateString(locale);
     await downloadInspectionPdf({
       title: t("inspectionPdfTitle"),
@@ -505,7 +516,7 @@ export default function InspectionsPage() {
               <td className="min-w-56 px-3 py-3">{row.profileName}</td>
               <td className="px-3 py-3"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs ${statusTone(row.status)}`}>{t(`inspectionStatus${row.status}`)}</span></td>
               <td className="px-3 py-3 font-semibold">{row.averageRating == null ? "—" : `${row.averageRating}/5`}</td>
-              <td className="px-3 py-3">{row.lowRatingGroups || row.missingTools ? <span className="text-rose-300">{row.lowRatingGroups + row.missingTools}</span> : <span className="text-teal-300">0</span>}</td>
+              <td className="px-3 py-3">{inspectionFindingCount(row) ? <span className="text-rose-300">{inspectionFindingCount(row)}</span> : <span className="text-teal-300">0</span>}</td>
               <td className="px-3 py-3"><button onClick={() => void openDetail(row.id)} disabled={detailBusy} className="whitespace-nowrap text-teal-300 hover:text-teal-200">{t("inspectionView")}</button></td>
             </tr>)}
             {!rows.length && !busy && <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-500">{t("inspectionNoResults")}</td></tr>}
@@ -528,14 +539,21 @@ export default function InspectionsPage() {
         <h3 className="mt-6 text-base font-semibold">{t("inspectionGroupResults")}</h3>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{detail.groups.map((group) => <div key={group.id} className="rounded-lg border border-white/[0.08] bg-[#0b111b] p-4"><div className="flex items-center justify-between"><p className="font-medium">{t(`inspectionGroup${group.groupKey}`)}</p><span className="text-lg font-bold text-teal-300">{group.rating}/5</span></div><p className="mt-2 text-sm text-slate-400">{group.comment || t("inspectionNoComment")}</p><div className="mt-3 space-y-1 text-xs text-slate-500">{group.answers.map((answer) => <div key={answer.criterionKey} className="flex justify-between gap-3"><span>{t(`inspectionCriterion${answer.criterionKey}`)}</span><span className="text-right text-slate-300">{formatAnswer(answer)}</span></div>)}</div></div>)}</div>
         {!!detail.tools.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionTools")}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{detail.tools.map((tool) => <div key={tool.toolId} className={`rounded-lg border bg-[#0b111b] px-3 py-2 text-sm ${tool.hasTool ? "border-teal-400/20 text-teal-200" : "border-rose-400/20 text-rose-200"}`}>{tool.toolName}: {tool.hasTool ? t("yes") : t("no")}</div>)}</div></>}
-        {!!detail.photos.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionPhotos")}</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{detail.photos.map((photo, index) => <button type="button" onClick={() => setPhotoViewerIndex(index)} key={photo.id} className="overflow-hidden rounded-lg border border-white/[0.08] bg-[#0b111b] text-left hover:border-teal-400/40"><Image unoptimized src={mediaUrl(photo.photoUrl)} alt={t(`inspectionPhoto${photo.photoType}`)} width={900} height={650} className="aspect-[4/3] w-full object-cover" /><div className="p-2 text-xs text-slate-400">{t(`inspectionPhoto${photo.photoType}`)}</div></button>)}</div></>}
+        {!!detail.photos.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionPhotos")}</h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {detail.photos.map((photo, index) => <button type="button" onClick={() => setPhotoViewerIndex(index)} key={photo.id} className="min-w-0 overflow-hidden rounded-lg border border-white/[0.08] bg-[#0b111b] text-left hover:border-teal-400/40">
+              <Image unoptimized src={mediaUrl(photo.photoUrl)} alt={inspectionPhotoTitle(photo, t(`inspectionPhoto${photo.photoType}`), locale)} width={900} height={650} className="aspect-[4/3] w-full object-cover" />
+              <div className="p-3"><p className="text-xs text-slate-400">{inspectionPhotoTitle(photo, t(`inspectionPhoto${photo.photoType}`), locale)}</p><InspectionPhotoReview photo={photo} locale={locale} /></div>
+            </button>)}
+          </div>
+        </>}
       </div>
     </div>}
     {detail && photoViewerIndex != null && <InspectionPhotoLightbox
       photos={detail.photos}
       initialIndex={photoViewerIndex}
       imageUrl={(photo) => mediaUrl(photo.photoUrl)}
-      photoLabel={(photo) => t(`inspectionPhoto${photo.photoType}`)}
+      photoLabel={(photo) => inspectionPhotoTitle(photo, t(`inspectionPhoto${photo.photoType}`), locale)}
       closeLabel={t("close")}
       onClose={() => setPhotoViewerIndex(null)}
     />}

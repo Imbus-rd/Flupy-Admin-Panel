@@ -2,8 +2,11 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { InspectionPhotoReview } from "./InspectionPhotoReview";
+import type { InspectionReviewPhoto } from "@/lib/inspectionPhotoReview";
+import { useI18n } from "@/lib/i18n";
 
-type Photo = { id: string; photoType: string; photoUrl: string };
+type Photo = InspectionReviewPhoto;
 
 export function InspectionPhotoLightbox({
   photos,
@@ -22,6 +25,7 @@ export function InspectionPhotoLightbox({
 }) {
   const [index, setIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
+  const { locale } = useI18n();
   const photo = photos[index];
 
   useEffect(() => {
@@ -47,14 +51,15 @@ export function InspectionPhotoLightbox({
         <button onClick={onClose} className="rounded-lg border border-white/10 px-4 text-sm text-white">{closeLabel}</button>
       </div>
     </div>
-    <div className="relative flex flex-1 items-center justify-center overflow-auto p-6" onClick={(event) => event.stopPropagation()}>
+    {(photo.inspectorDecision || photo.inspectorComment) && <div className="max-h-[25vh] overflow-y-auto border-b border-white/10 bg-[#070b13] px-4 pb-3" onClick={event => event.stopPropagation()}><InspectionPhotoReview photo={photo} locale={locale} /></div>}
+    <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-6" onClick={(event) => event.stopPropagation()}>
       <Image
         unoptimized
         src={imageUrl(photo)}
         alt={photoLabel(photo)}
         width={1800}
         height={1350}
-        className="max-h-[78vh] w-auto max-w-none object-contain transition-transform duration-150"
+        className="max-h-full w-auto max-w-full object-contain transition-transform duration-150"
         style={{ transform: `scale(${zoom})` }}
       />
       {photos.length > 1 && <>

@@ -75,6 +75,8 @@ Deploy the matching backend first, then rebuild/deploy this panel. No new databa
 
 ## Integrated performance KPIs
 
+QR Offline photo cards and the expanded viewer show the API's individual OK/FE/ERROR decision and comment; FE and Error also appear as PDF findings. The grid and Excel use the backend `findingsCount`, including Offline photo findings, instead of only group ratings. Deploy the matching backend first for corrected list/dashboard counts. This does not change the existing one-order/one-sample quality classification or FE scoring policy.
+
 The dashboard and Quality Intelligence KPI view share /quality-intelligence/report and its existing regional and company authorization. Claro uses final weighted scores, the actual sample month and a 96% target; it is not merged into QR Offline's formula. Excel exports separate KPI sheets for totals, technicians, supervisors, month and Claro process. The approved overall score uses equal weights among available values of the seven requested KPIs. Online is normalized to 100; missing samples are excluded, observed zeros count, and coverage N/7 is always shown.
 
 Process/project controls are Claro-specific. Current punctuality covers first recorded non-automatic check-ins with known office schedules, not unproven absence. For this stage Retro+ uses completed submissions as the approved proxy, with one submission per technician and observed active day; extras cannot cover a different day. Actual positive customer ratings remain unverified. Inspection detail and PDF include the freshly saved OT proximity status when supplied by the backend.
