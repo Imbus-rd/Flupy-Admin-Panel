@@ -1,6 +1,7 @@
 export type InspectionReviewPhoto = {
   id: string; photoType: string; photoUrl: string; capturedAt?: string;
   inspectorDecision?: string | null; inspectorComment?: string | null;
+  errors?: {code:string;status:string;description:string;group:string}[];
   errorCode?: string | null; errorStatus?: string | null; errorDescription?: string | null; errorGroup?: string | null;
 };
 
@@ -14,7 +15,8 @@ export function inspectionPhotoReview(photo: InspectionReviewPhoto, locale = "es
   const tone = decision === "OK" ? "border-teal-400/30 bg-teal-400/10 text-teal-200"
     : decision === "FE" ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
     : decision === "ERROR" ? "border-rose-400/30 bg-rose-400/10 text-rose-200" : "border-white/10 text-slate-400";
-  const error = photo.errorCode ? `${photo.errorCode} · ${photo.errorGroup || ""} · ${photo.errorDescription || ""} (${photo.errorStatus === 'C' ? 'Crítico' : photo.errorStatus === 'NC' ? 'No crítico' : 'No imputable'})` : "";
+  const errors = photo.errors?.length ? photo.errors : photo.errorCode ? [{code:photo.errorCode,status:photo.errorStatus,group:photo.errorGroup,description:photo.errorDescription}] : [];
+  const error = errors.map(e=>`${e.code} · ${e.group || ""} · ${e.description || ""} (${e.status === 'C' ? 'Crítico' : e.status === 'NC' ? 'No crítico' : 'No imputable'})`).join("\n");
   return { label, tone, comment: [error, photo.inspectorComment?.trim()].filter(Boolean).join("\n"), finding: decision === "FE" || decision === "ERROR" };
 }
 

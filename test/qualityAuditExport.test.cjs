@@ -25,3 +25,12 @@ test('no sample is visibly unavailable, never zero or an apparently passing scor
   assert.equal(b.getWorksheet('Por técnico').getCell('J6').value,'Sin muestra');
   assert.equal(b.getWorksheet('Pareto gráfico').getCell('A5').value,'Sin errores imputables para estos filtros.');
 });
+
+test('each error on a photograph has its own audit row without duplicating the order sheet',()=>{
+  const data=fixture();
+  data.items[0].photos=[{id:'photo',type:'BEFORE',decision:'ERROR',comment:'Varios errores',errors:[{code:'12',description:'Uno',group:'Cabina',status:'NC'},{code:'14',description:'Dos',group:'Cabina',status:'X'},{code:'70',description:'Tres',group:'Equipos',status:'C'}]}];
+  const b=populateQualityAuditWorkbook(new ExcelJS.Workbook(),data),audit=b.getWorksheet('Auditoría de fotos');
+  assert.equal(audit.rowCount,8);assert.equal(b.getWorksheet('Órdenes').rowCount,6);
+  assert.deepEqual([6,7,8].map(row=>audit.getCell(row,9).value),['12','14','70']);
+  assert.deepEqual([6,7,8].map(row=>audit.getCell(row,21).value),['photo','photo','photo']);
+});

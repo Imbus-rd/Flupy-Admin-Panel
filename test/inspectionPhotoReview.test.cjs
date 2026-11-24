@@ -27,3 +27,11 @@ test('grid and Excel use the server finding count, including FE, with a backward
   assert.equal(inspectionFindingCount({ lowRatingGroups: 1, missingTools: 1, photoFindingCount: 2 }), 4);
   assert.equal(inspectionFindingCount({ lowRatingGroups: 0, missingTools: 0 }), 0);
 });
+
+test('all classified errors on a photograph are visible in detail and PDF comments, not only the worst one', () => {
+  const result=inspectionPhotoReview({...photo,inspectorDecision:'ERROR',inspectorComment:'Comentario compartido',errors:[
+    {code:'12',status:'NC',description:'Uno',group:'Cabina'},
+    {code:'14',status:'X',description:'Dos',group:'Cabina'},
+    {code:'70',status:'C',description:'Tres',group:'Equipos'}]});
+  for(const text of ['12 · Cabina · Uno (No crítico)','14 · Cabina · Dos (No imputable)','70 · Equipos · Tres (Crítico)','Comentario compartido']) assert.ok(result.comment.includes(text));
+});

@@ -1,6 +1,7 @@
 import type ExcelJS from 'exceljs';
 
-type Photo = { id: string; type: string; url: string; decision: string | null; comment: string | null;
+type ErrorDetail = {code:string;status:string;description:string;group:string};
+type Photo = { errors?: ErrorDetail[]; id: string; type: string; url: string; decision: string | null; comment: string | null;
   fe: number; feComment: string | null; errorCode: string | null; errorStatus: string | null;
   errorDescription: string | null; errorGroup: string | null; capturedAt: string | null; reviewedAt: string | null;
   reviewerId: string | null; latitude: number | null; longitude: number | null };
@@ -44,7 +45,7 @@ export function populateQualityAuditWorkbook(book: ExcelJS.Workbook, data: Quali
   }
   summary('Por técnico',data.byTechnician); summary('Por región',data.byRegion); summary('Por supervisor',data.bySupervisor);
   sheet('Órdenes',['Fecha','Orden','Tarjeta','Técnico','Región','Supervisor','Tarjeta supervisor','Tipo de trabajo','Flujo','Decisión','Muestra','Fotos','ID'],data.items.map(o=>[date(o.date),o.order,o.card,o.technician,o.region,o.supervisor,o.supervisorCard,o.workType,o.status,o.decision,labels[o.classification]||o.classification,o.photos.length,o.id]),[22,18,14,32,16,32,18,28,18,18,20,10,38]);
-  const audit=sheet('Auditoría de fotos',['Orden','Tarjeta','Técnico','Región','Supervisor','Tipo de foto','Respuesta','Comentario','Error','Descripción del error','Grupo','Tipo de error','FE técnico','Comentario FE técnico','Fecha de foto','Fecha de revisión','Revisor ID','Latitud','Longitud','Imagen','Foto ID'],data.items.flatMap(o=>o.photos.map(p=>[o.order,o.card,o.technician,o.region,o.supervisor,p.type,p.decision||'Pendiente',p.comment,p.errorCode,p.errorDescription,p.errorGroup,labels[p.errorStatus||'']||'',p.fe?'Sí':'No',p.feComment,date(p.capturedAt),date(p.reviewedAt),p.reviewerId,p.latitude,p.longitude,p.url,p.id])),[18,14,30,16,30,27,14,55,12,60,30,18,14,50,22,22,38,16,16,55,38]);
+  const audit=sheet('Auditoría de fotos',['Orden','Tarjeta','Técnico','Región','Supervisor','Tipo de foto','Respuesta','Comentario','Error','Descripción del error','Grupo','Tipo de error','FE técnico','Comentario FE técnico','Fecha de foto','Fecha de revisión','Revisor ID','Latitud','Longitud','Imagen','Foto ID'],data.items.flatMap(o=>o.photos.flatMap(p=>(p.errors?.length ? p.errors : [null]).map(e=>[o.order,o.card,o.technician,o.region,o.supervisor,p.type,p.decision||'Pendiente',p.comment,e?.code ?? p.errorCode,e?.description ?? p.errorDescription,e?.group ?? p.errorGroup,labels[e?.status ?? p.errorStatus ?? '']||'',p.fe?'Sí':'No',p.feComment,date(p.capturedAt),date(p.reviewedAt),p.reviewerId,p.latitude,p.longitude,p.url,p.id]))),[18,14,30,16,30,27,14,55,12,60,30,18,14,50,22,22,38,16,16,55,38]);
   audit.getColumn(18).numFmt='0.000000';audit.getColumn(19).numFmt='0.000000';
   const errors=sheet('Pareto de errores',['Error','Descripción','Grupo','Tipo','Ocurrencias','Órdenes distintas','Participación','Acumulado'],data.pareto.map(e=>[e.code,e.description,e.group,labels[e.status],e.occurrences,e.orders,e.percent??null,e.cumulativePercent??null]),[14,65,30,18,16,18,18,18]);
   errors.getColumn(7).numFmt='0.00%';errors.getColumn(8).numFmt='0.00%';
@@ -61,7 +62,8 @@ export function populateQualityAuditWorkbook(book: ExcelJS.Workbook, data: Quali
     ['OK','Incluye respuestas OK, FE y errores de tipo X (no imputables).'],
     ['Sin clasificar','Errores históricos sin código no reciben una gravedad inventada. Se excluyen del porcentaje hasta clasificarse.'],
     ['Pendientes','Órdenes no enviadas o con fotos sin evaluar no entran al denominador. Sin evaluadas: Sin muestra.'],
-    ['Pareto','Ocurrencias de errores imputables (C/NC), ordenadas de mayor a menor. No confundir ocurrencias con muestras.'],
+    ['Pareto','Ocurrencias de cada código imputable (C/NC), ordenadas de mayor a menor. Una foto puede tener varios códigos; cada código cuenta una vez por foto. No confundir ocurrencias con muestras.'],
+    ['Auditoría de fotos','Una fila por código de error de cada foto. Las fotos sin errores conservan una fila. No sumar filas para contar fotos u órdenes.'],
     ['Histórico','Código, grupo, descripción y gravedad conservan la clasificación guardada al evaluar. Supervisor y región corresponden a la asignación actual del técnico.'],
   ],[26,120]);
   return book;

@@ -281,6 +281,8 @@ export default function QualityPage() {
             capturedAt?: string | null;
             inspectorDecision?: string;
             errorCode?: string | null;
+            errorCodes?: string[];
+            errors?: LightboxPhoto["errors"];
             inspectorComment?: string | null;
             fe?: boolean;
             feComment?: string | null;
@@ -296,7 +298,7 @@ export default function QualityPage() {
           longitude: p.longitude ?? null,
           capturedAt: p.capturedAt ?? null,
           inspectorDecision: String(p.inspectorDecision || "NONE").toUpperCase(),
-          errorCode: p.errorCode,
+          errorCode: p.errorCode, errorCodes: p.errorCodes, errors: p.errors,
           inspectorComment: p.inspectorComment ?? null,
           fe: Boolean(p.fe),
           feComment: p.feComment ?? null
@@ -334,18 +336,18 @@ export default function QualityPage() {
       photoId: string,
       decision: "FE" | "ERROR" | "OK",
       comment?: string | null,
-      errorCode?: string | null
+      errorCodes?: string[]
     ): Promise<boolean> => {
       if (!token || !lightbox) return false;
       setBusy(true);
       try {
-        await apiFetch(`/admin/quality/${lightbox.qualityId}/review`, {
+        const saved = await apiFetch<{ errors: LightboxPhoto["errors"]; errorCodes: string[] }>(`/admin/quality/${lightbox.qualityId}/review`, {
           method: "PATCH",
           token,
           body: JSON.stringify({
             photoId,
             decision,
-            errorCode,
+            errorCodes,
             ...(decision === "OK" ? {} : { comment: comment ?? "" })
           })
         });
@@ -358,7 +360,9 @@ export default function QualityPage() {
                 ? {
                     ...p,
                     inspectorDecision: decision,
-                    errorCode: decision === "ERROR" ? errorCode : null,
+                    errorCode: decision === "ERROR" ? errorCodes?.[0] : null,
+                    errorCodes: decision === "ERROR" ? errorCodes : [],
+                    errors: saved.errors || [],
                     inspectorComment: decision === "OK" ? null : (comment ?? "").trim()
                   }
                 : p
