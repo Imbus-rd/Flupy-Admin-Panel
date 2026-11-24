@@ -10,11 +10,11 @@ vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.Mo
   { module: moduleValue, exports: moduleValue.exports, URLSearchParams, Intl, Date });
 const { onlineTargetQuery, onlineTargetScale, onlineTargetExport } = moduleValue.exports;
 
-test('target requests have their own explicit period and encode regional and supervisor filters', () => {
-  const p = new URLSearchParams(onlineTargetQuery({ period: 'WEEK', date: '2026-11-17', region: 'Este & Sur', supervisorId: ['sup/1', 'sup/2', 'sup/1'], process: 'REPAIR' }));
+test('target requests have their own explicit period and encode regional and auditor filters', () => {
+  const p = new URLSearchParams(onlineTargetQuery({ period: 'WEEK', date: '2026-11-17', region: 'Este & Sur', auditorId: ['sup/1', 'sup/2', 'sup/1'], process: 'REPAIR' }));
   assert.equal(p.get('period'), 'WEEK'); assert.equal(p.get('date'), '2026-11-17');
-  assert.equal(p.get('region'), 'Este & Sur'); assert.equal(p.get('supervisorId'), 'sup/1');
-  assert.deepEqual(p.getAll('supervisorId'), ['sup/1', 'sup/2']); assert.equal(p.get('process'), 'REPAIR');
+  assert.equal(p.get('region'), 'Este & Sur'); assert.equal(p.get('auditorId'), 'sup/1');
+  assert.deepEqual(p.getAll('auditorId'), ['sup/1', 'sup/2']); assert.equal(p.get('process'), 'REPAIR');
   assert.equal(p.has('fromDate'), false);
 });
 
@@ -28,7 +28,7 @@ test('bars share a single scale for actuals and targets and retain zero progress
 
 test('Excel preserves numeric targets, historical snapshots, zero activity and the explicit period', () => {
   const out = onlineTargetExport({ monthlyGoal: 60, filters: { process: 'REPAIR' }, period: { fromDate: '2026-11-16', toDate: '2026-11-20', workdays: 5 },
-    rows: [{ name: 'Supervisor', card: '001', region: 'Este', target: 14.29, completed: 0, percent: 0, remaining: 14.29,
+    rows: [{ name: 'Auditor', card: '001', region: 'Este', target: 14.29, completed: 0, percent: 0, remaining: 14.29,
       historical: true, daily: [{ date: '2026-11-17', target: 60 / 21, completed: 0 }] }] });
   assert.equal(out.headings.length, out.rows[0].length);
   assert.equal(out.rows[0][5], 60); assert.equal(out.rows[0][7], 14.29);

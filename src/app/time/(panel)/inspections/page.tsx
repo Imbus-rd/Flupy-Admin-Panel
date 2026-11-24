@@ -26,6 +26,9 @@ type QualityIndicator = {
   name: string;
   okSamples: number;
   criticalSamples: number;
+  nonCriticalSamples?: number;
+  unclassifiedSamples?: number;
+  unclassified?: number;
   evaluatedSamples: number;
   compliancePercent: number | null;
   errorPhotoCount: number;
@@ -60,6 +63,9 @@ type InspectionRow = {
   findingsCount?: number;
   okSamples: number;
   criticalSamples: number;
+  nonCriticalSamples?: number;
+  unclassifiedSamples?: number;
+  unclassified?: number;
   evaluatedSamples: number;
   compliancePercent: number | null;
   groupRatings: Record<GroupKey, number | null>;
@@ -80,6 +86,9 @@ type ReportResponse = {
     averageRating?: number | null;
     okSamples: number;
     criticalSamples: number;
+  nonCriticalSamples?: number;
+  unclassifiedSamples?: number;
+  unclassified?: number;
     evaluatedSamples: number;
     compliancePercent: number | null;
     errorPhotoCount: number;
@@ -252,6 +261,8 @@ export default function InspectionsPage() {
       { header: t("inspectionCoordinates"), key: "coordinates", width: 26 },
       { header: t("inspectionOkSamples"), key: "okSamples", width: 15 },
       { header: t("inspectionCriticalSamples"), key: "criticalSamples", width: 18 },
+      { header: "Muestras no críticas", key: "nonCriticalSamples", width: 20 },
+      { header: "Sin clasificar", key: "unclassifiedSamples", width: 18 },
       { header: t("inspectionEvaluatedSamples"), key: "evaluatedSamples", width: 18 },
       { header: t("inspectionCompliance"), key: "compliance", width: 18 },
       ...groupKeys.map((key) => ({ header: t(`inspectionGroup${key}`), key, width: 24 }))
@@ -273,6 +284,8 @@ export default function InspectionsPage() {
       coordinates: row.latitude != null && row.longitude != null ? `${row.latitude}, ${row.longitude}` : "",
       okSamples: row.okSamples,
       criticalSamples: row.criticalSamples,
+      nonCriticalSamples: row.nonCriticalSamples || 0,
+      unclassifiedSamples: row.unclassifiedSamples || 0,
       evaluatedSamples: row.evaluatedSamples,
       compliance: row.compliancePercent == null ? t("inspectionNoSample") : `${row.compliancePercent.toFixed(2)}%`,
       ...Object.fromEntries(groupKeys.map((key) => [key, row.groupRatings[key] ?? ""]))
@@ -289,6 +302,8 @@ export default function InspectionsPage() {
           { header: t("employeeCode"), key: "card", width: 18 },
           { header: t("inspectionOkSamples"), key: "ok", width: 16 },
           { header: t("inspectionCriticalSamples"), key: "critical", width: 18 },
+          { header: t("inspectionNonCriticalSamples"), key: "nonCritical", width: 20 },
+          { header: t("inspectionUnclassified"), key: "unclassified", width: 18 },
           { header: t("inspectionEvaluatedSamples"), key: "total", width: 18 },
           { header: t("inspectionCompliance"), key: "compliance", width: 18 },
           { header: t("inspectionErrorPhotos"), key: "errorPhotos", width: 18 }
@@ -298,6 +313,8 @@ export default function InspectionsPage() {
           card: value.card,
           ok: value.okSamples,
           critical: value.criticalSamples,
+          nonCritical: value.nonCriticalSamples || 0,
+          unclassified: value.unclassified || 0,
           total: value.evaluatedSamples,
           compliance: value.compliancePercent == null ? t("inspectionNoSample") : `${value.compliancePercent.toFixed(2)}%`,
           errorPhotos: value.errorPhotoCount
@@ -430,13 +447,13 @@ export default function InspectionsPage() {
       <thead className="bg-white/[0.04] text-xs uppercase text-slate-500"><tr>
         <th className="px-3 py-3">{t("name")}</th><th className="px-3 py-3">{t("employeeCode")}</th>
         <th className="px-3 py-3">{t("inspectionOkSamples")}</th><th className="px-3 py-3">{t("inspectionCriticalSamples")}</th>
-        <th className="px-3 py-3">{t("inspectionEvaluatedSamples")}</th><th className="px-3 py-3">{t("inspectionCompliance")}</th><th className="px-3 py-3">{t("inspectionErrorPhotos")}</th>
+        <th className="px-3 py-3">{t("inspectionNonCriticalSamples")}</th><th className="px-3 py-3">{t("inspectionUnclassified")}</th><th className="px-3 py-3">{t("inspectionEvaluatedSamples")}</th><th className="px-3 py-3">{t("inspectionCompliance")}</th><th className="px-3 py-3">{t("inspectionErrorPhotos")}</th>
       </tr></thead>
       <tbody className="divide-y divide-white/[0.06]">{values.map((value) => <tr key={value.id || value.card}>
         <td className="px-3 py-3 text-slate-100">{value.name}</td><td className="px-3 py-3 font-mono text-slate-400">{value.card}</td>
         <td className="px-3 py-3 text-teal-300">{value.okSamples}</td><td className="px-3 py-3 text-rose-300">{value.criticalSamples}</td>
-        <td className="px-3 py-3">{value.evaluatedSamples}</td><td className="px-3 py-3 font-semibold text-sky-300">{value.compliancePercent == null ? t("inspectionNoSample") : `${value.compliancePercent.toFixed(2)}%`}</td><td className="px-3 py-3 text-rose-200">{value.errorPhotoCount}</td>
-      </tr>)}{!values.length && <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">{t("inspectionNoSample")}</td></tr>}</tbody>
+        <td className="px-3 py-3 text-amber-200">{value.nonCriticalSamples || 0}</td><td className="px-3 py-3">{value.unclassified || 0}</td><td className="px-3 py-3">{value.evaluatedSamples}</td><td className="px-3 py-3 font-semibold text-sky-300">{value.compliancePercent == null ? t("inspectionNoSample") : `${value.compliancePercent.toFixed(2)}%`}</td><td className="px-3 py-3 text-rose-200">{value.errorPhotoCount}</td>
+      </tr>)}{!values.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">{t("inspectionNoSample")}</td></tr>}</tbody>
     </table></div>
   </section>;
 
@@ -462,10 +479,12 @@ export default function InspectionsPage() {
       <section className="ui-card p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div><p className="text-xs uppercase tracking-wide text-slate-500">{t("inspectionGeneralCompliance")}</p>
-            <p className="mt-1 text-4xl font-bold text-sky-300">{summary.compliancePercent == null ? t("inspectionNoSample") : `${summary.compliancePercent.toFixed(2)}%`}</p></div>
+            <p className={`mt-1 text-4xl font-bold ${(summary.compliancePercent ?? 100) < 96 ? "text-rose-300" : "text-teal-300"}`}>{summary.compliancePercent == null ? t("inspectionNoSample") : `${summary.compliancePercent.toFixed(2)}%`}</p></div>
           <div className="grid grid-cols-2 gap-6 text-center sm:grid-cols-4">
             <div><p className="text-xs text-slate-500">{t("inspectionOkSamples")}</p><p className="mt-1 text-xl font-semibold text-teal-300">{summary.okSamples}</p></div>
             <div><p className="text-xs text-slate-500">{t("inspectionCriticalSamples")}</p><p className="mt-1 text-xl font-semibold text-rose-300">{summary.criticalSamples}</p></div>
+            <div><p className="text-xs text-slate-500">{t("inspectionNonCriticalSamples")}</p><p className="mt-1 text-xl font-semibold text-amber-200">{summary.nonCriticalSamples || 0}</p></div>
+            <div><p className="text-xs text-slate-500">{t("inspectionUnclassified")}</p><p className="mt-1 text-xl font-semibold text-slate-300">{summary.unclassifiedSamples || 0}</p></div>
             <div><p className="text-xs text-slate-500">{t("inspectionEvaluatedSamples")}</p><p className="mt-1 text-xl font-semibold text-white">{summary.evaluatedSamples}</p></div>
             <div><p className="text-xs text-slate-500">{t("inspectionErrorPhotos")}</p><p className="mt-1 text-xl font-semibold text-rose-300">{summary.errorPhotoCount}</p></div>
           </div>

@@ -9,6 +9,7 @@ import { QualityLightbox, type LightboxPhoto } from "@/components/QualityLightbo
 import { WifiAdvisoryReviewDialog, type WifiAdvisoryDetail } from "@/components/WifiAdvisoryReviewDialog";
 import { WifiAdvisoryConfigPanel } from "@/components/WifiAdvisoryConfigPanel";
 import { formatReportingDateTime } from "@/lib/timezone";
+import { populateQualityAuditWorkbook, qualityAuditBuffer, type QualityAuditReport } from "@/lib/qualityAuditExport";
 
 type QItem = {
   id: string;
@@ -118,6 +119,7 @@ export default function QualityPage() {
     index: number;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [wifiReview, setWifiReview] = useState<{
     qualityId: string;
     orderId: string;
@@ -146,6 +148,7 @@ export default function QualityPage() {
         const query = buildQualityQuery(from, to, user, employeeCode, orderId, status, inspectorDecision);
         const data = await apiFetch<{ items: QItem[] }>(`/admin/quality/items${query}`, { token });
         setItems(data.items || []);
+        setAppliedQuery(query);
       } catch (e) {
         setErr(e instanceof ApiError ? e.message : t("errorLoad"));
       }
@@ -197,6 +200,20 @@ export default function QualityPage() {
       setBusy(false);
     }
   }, [token, fromDate, toDate, filterEmployeeCode, filterOrderId]);
+
+  const exportQualityExcel = async () => {
+    if (!token) return;
+    setBusy(true); setErr(null);
+    try {
+      const report = await apiFetch<QualityAuditReport>(`/admin/quality/report${appliedQuery}`, { token });
+      const ExcelJS=(await import('exceljs')).default;
+      const book=populateQualityAuditWorkbook(new ExcelJS.Workbook(),report);
+      const buffer=await qualityAuditBuffer(book,report);
+      const url=URL.createObjectURL(new Blob([buffer as BlobPart],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+      const a=document.createElement('a');a.href=url;a.download=`flupy-reporte-calidad-${new Date().toISOString().slice(0,10)}.xlsx`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    } catch(e) { setErr(e instanceof Error?e.message:'No se pudo exportar el reporte de calidad.'); }
+    finally { setBusy(false); }
+  };
 
   const fetchItemsRef = useRef(fetchItems);
   fetchItemsRef.current = fetchItems;
@@ -263,6 +280,7 @@ export default function QualityPage() {
             longitude?: number | null;
             capturedAt?: string | null;
             inspectorDecision?: string;
+            errorCode?: string | null;
             inspectorComment?: string | null;
             fe?: boolean;
             feComment?: string | null;
@@ -278,6 +296,7 @@ export default function QualityPage() {
           longitude: p.longitude ?? null,
           capturedAt: p.capturedAt ?? null,
           inspectorDecision: String(p.inspectorDecision || "NONE").toUpperCase(),
+          errorCode: p.errorCode,
           inspectorComment: p.inspectorComment ?? null,
           fe: Boolean(p.fe),
           feComment: p.feComment ?? null
@@ -314,7 +333,8 @@ export default function QualityPage() {
     async (
       photoId: string,
       decision: "FE" | "ERROR" | "OK",
-      comment?: string | null
+      comment?: string | null,
+      errorCode?: string | null
     ): Promise<boolean> => {
       if (!token || !lightbox) return false;
       setBusy(true);
@@ -325,6 +345,7 @@ export default function QualityPage() {
           body: JSON.stringify({
             photoId,
             decision,
+            errorCode,
             ...(decision === "OK" ? {} : { comment: comment ?? "" })
           })
         });
@@ -337,6 +358,7 @@ export default function QualityPage() {
                 ? {
                     ...p,
                     inspectorDecision: decision,
+                    errorCode: decision === "ERROR" ? errorCode : null,
                     inspectorComment: decision === "OK" ? null : (comment ?? "").trim()
                   }
                 : p
@@ -394,7 +416,7 @@ export default function QualityPage() {
             </p>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => void exportWifiExcel()}
@@ -403,6 +425,7 @@ export default function QualityPage() {
           >
             Exportar WiFi a Excel
           </button>
+          <button type="button" onClick={()=>void exportQualityExcel()} disabled={busy} className="self-start rounded-lg border border-teal-400/30 bg-teal-400/10 px-4 py-2 text-sm text-teal-200 hover:bg-teal-400/20 disabled:opacity-50">Exportar reporte de calidad</button>
           <button
             type="button"
             onClick={() =>

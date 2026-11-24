@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getApiBase } from "@/lib/api";
+import { apiFetch, getApiBase } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
 /** Session LRU of object URLs so revisiting photos / prev-next does not re-download full JPEGs. */
@@ -50,6 +50,7 @@ export type LightboxPhoto = {
   inspectorDecision?: string;
   /** Validator comment when marking FE or ERROR */
   inspectorComment?: string | null;
+  errorCode?: string | null;
   /** Employee marked this photo as out of standard at upload (FE). */
   fe?: boolean;
   /** Mandatory technician comment when out of standard; visible to administrators. */
@@ -70,7 +71,8 @@ type Props = {
   onPhotoDecision: (
     photoId: string,
     decision: "FE" | "ERROR" | "OK",
-    comment?: string | null
+    comment?: string | null,
+    errorCode?: string | null
   ) => Promise<boolean>;
   busy?: boolean;
   readOnly?: boolean;
@@ -105,6 +107,17 @@ export function QualityLightbox({
   const [imgErr, setImgErr] = useState(false);
   const [reviewComment, setReviewComment] = useState("");
   const [commentError, setCommentError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState("");
+  const [catalog, setCatalog] = useState<{code:string;description:string;groupName:string;status:string}[]>([]);
+  const [catalogError, setCatalogError] = useState("");
+  useEffect(() => {
+    if (!open || !token || readOnly) return;
+    let current=true;
+    setCatalogError("");
+    apiFetch<{items:typeof catalog}>("/quality-error-catalog", { token }).then(r=>{if(current)setCatalog(r.items);})
+      .catch(()=>{if(current)setCatalogError("No se pudo consultar el catálogo de errores. Cierre y vuelva a abrir la orden para reintentar.");});
+    return ()=>{current=false;};
+  },[open,token,readOnly]);
 
   const photo = photos[index];
   const photoId = photo?.id;
@@ -124,8 +137,9 @@ export function QualityLightbox({
 
   useEffect(() => {
     setReviewComment(photo?.inspectorComment?.trim() ?? "");
+    setErrorCode(photo?.errorCode || "");
     setCommentError(null);
-  }, [photo?.id, photo?.inspectorComment, open]);
+  }, [photo?.id, photo?.inspectorComment, photo?.errorCode, open]);
 
   useEffect(() => {
     if (!open || !photoId || !qualityId) {
@@ -207,11 +221,14 @@ export function QualityLightbox({
         setCommentError(t("qualityInspectorCommentRequired"));
         return;
       }
+      if (decision === "ERROR" && !catalog.some(e=>e.code===errorCode)) {
+        setCommentError("Seleccione el tipo de error del catálogo."); return;
+      }
       setCommentError(null);
-      const ok = await onPhotoDecision(photo.id, decision, decision === "OK" ? null : trimmed);
+      const ok = await onPhotoDecision(photo.id, decision, decision === "OK" ? null : trimmed, decision === "ERROR" ? errorCode : null);
       if (ok && index < photos.length - 1) onIndexChange(index + 1);
     },
-    [photo, onPhotoDecision, index, photos.length, onIndexChange, reviewComment, t]
+    [photo, onPhotoDecision, index, photos.length, onIndexChange, reviewComment, t, errorCode, catalog]
   );
 
   if (!open || !photo) return null;
@@ -399,6 +416,13 @@ export function QualityLightbox({
       )}
 
       {!readOnly && <div className="border-t border-white/[0.08] bg-black/40 px-4 py-3">
+        <label className="mb-2 block text-xs text-slate-300">Tipo de error
+          <select aria-label="Tipo de error" value={errorCode} disabled={busy} onChange={e=>{setErrorCode(e.target.value);setCommentError(null);}} className="mt-1 block h-11 w-full rounded-lg border border-white/15 bg-[#080d15] px-3 text-sm text-white">
+            <option value="">Seleccionar para marcar Error</option>
+            {[...new Set(catalog.map(e=>e.groupName))].map(group=><optgroup key={group} label={group}>{catalog.filter(e=>e.groupName===group).map(e=><option key={e.code} value={e.code}>{e.code} · {e.description} ({e.status === 'C'?'Crítico':e.status === 'NC'?'No crítico':'No imputable'})</option>)}</optgroup>)}
+          </select>
+        </label>
+        {catalogError && <p role="alert" className="mb-2 text-xs text-rose-300">{catalogError}</p>}
         <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400" htmlFor="quality-inspector-comment">
           {t("qualityInspectorCommentLabel")}
         </label>

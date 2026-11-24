@@ -1,4 +1,4 @@
-export type OnlineTargetFilters = { period: "MONTH" | "WEEK" | "DAY"; date: string; region: string; supervisorId: string[]; process: string };
+export type OnlineTargetFilters = { period: "MONTH" | "WEEK" | "DAY"; date: string; region: string; auditorId: string[]; process: string };
 export type OnlineTargetRow = {
   id: string; card: string; name: string; region: string; historical: boolean;
   completed: number; target: number | null; remaining: number | null; percent: number | null;
@@ -6,9 +6,9 @@ export type OnlineTargetRow = {
 };
 export type OnlineTargets = {
   monthlyGoal: number; filters: OnlineTargetFilters;
-  period: { fromDate: string; toDate: string; workdays: number; targetPerSupervisor: number | null };
-  summary: { supervisors: number; completed: number; target: number | null; percent: number | null; atGoal: number };
-  options: { regions: string[]; supervisors: { id: string; card: string; name: string }[] };
+  period: { fromDate: string; toDate: string; workdays: number; targetPerAuditor: number | null };
+  summary: { auditors: number; completed: number; target: number | null; percent: number | null; atGoal: number };
+  options: { regions: string[]; auditors: { id: string; card: string; name: string }[] };
   rows: OnlineTargetRow[];
 };
 
@@ -27,7 +27,7 @@ export function onlineTargetScale(rows: OnlineTargetRow[]) {
 }
 
 export function onlineTargetExport(data: OnlineTargets) {
-  const headings = ["Supervisor", "Tarjeta", "Región", "Desde", "Hasta", "Meta mensual", "Días lunes a viernes",
+  const headings = ["Auditor", "Tarjeta", "Región", "Desde", "Hasta", "Meta mensual", "Días lunes a viernes",
     "Meta del período", "QR Online completados", "Cumplimiento %", "Faltantes", "Registro histórico", "Proceso"];
   const process = ({ INSTALLATION: "Instalación", REPAIR: "Avería", UNCLASSIFIED: "Sin clasificar" } as Record<string, string>)[data.filters.process] || "Todos";
   const rows = data.rows.map(r => [r.name, r.card, r.region, data.period.fromDate, data.period.toDate,
