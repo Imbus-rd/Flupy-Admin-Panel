@@ -17,7 +17,8 @@ const nav = [
   { href: "/time/inspections", key: "navInspections", children: [
     { href: "/time/inspections/online", key: "navQrOnline" },
     { href: "/time/inspections/offline", key: "navQrOffline" },
-    { href: "/time/inspections/validated", key: "navQrValidated" }
+    { href: "/time/inspections/validated", key: "navQrValidated" },
+    { href: "/time/inspections/dispatch", key: "navInspectionDispatch", adminOnly: true }
   ] },
   { href: "/time/geofences", key: "navGeofences" },
   { href: "/time/reports", key: "navReports" },
@@ -107,7 +108,7 @@ export function TimeShell({ children }: { children: React.ReactNode }) {
                       {t(item.key)}
                     </Link>
                     <div className="ml-3 flex gap-1 border-l border-white/[0.08] pl-2 lg:flex-col" role="group">
-                      {item.children.map((child) => {
+                      {item.children.filter(child=>!("adminOnly" in child&&child.adminOnly)||employee?.role==='ADMIN').map((child) => {
                         const childActive = pathname === child.href;
                         return <Link
                           key={child.href}
