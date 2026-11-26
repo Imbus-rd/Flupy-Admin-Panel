@@ -21,11 +21,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!ready || !token || !employee) return;
-    if (employee.role === "WAREHOUSE" && !pathname.startsWith("/time/warehouse")) {
+    if (employee.role === "WAREHOUSE" && !pathname.startsWith("/time/warehouse") && pathname !== "/time/help") {
       router.replace("/time/warehouse");
     }
     if (employee.role === "SUPERVISOR") {
-      const allowed = ["/time/dashboard", "/time/attendance", "/time/quality", "/time/quality-intelligence", "/time/claro-quality", "/time/inspections", "/time/reports", "/time/profile"];
+      const allowed = ["/time/dashboard", "/time/attendance", "/time/quality", "/time/quality-intelligence", "/time/claro-quality", "/time/inspections", "/time/reports", "/time/profile", "/time/help"];
       if (!allowed.some((prefix) => pathname.startsWith(prefix))) router.replace("/time/dashboard");
     }
   }, [ready, token, employee, pathname, router]);

@@ -6,6 +6,7 @@ import { LogoMark } from "./LogoMark";
 import { LangSwitch } from "./LangSwitch";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/AuthProvider";
+import { CircleHelp } from "lucide-react";
 
 const nav = [
   { href: "/time/dashboard", key: "navDashboard" },
@@ -23,7 +24,8 @@ const nav = [
   { href: "/time/geofences", key: "navGeofences" },
   { href: "/time/reports", key: "navReports" },
   { href: "/time/warehouse", key: "navWarehouse" },
-  { href: "/time/profile", key: "navProfile" }
+  { href: "/time/profile", key: "navProfile" },
+  { href: "/time/help", key: "navHelp" }
 ];
 
 const supervisorPaths = new Set([
@@ -34,10 +36,11 @@ const supervisorPaths = new Set([
   "/time/claro-quality",
   "/time/inspections",
   "/time/reports",
-  "/time/profile"
+  "/time/profile",
+  "/time/help"
 ]);
 
-const warehousePaths = new Set(["/time/warehouse"]);
+const warehousePaths = new Set(["/time/warehouse", "/time/help"]);
 
 export function TimeShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -66,6 +69,9 @@ export function TimeShell({ children }: { children: React.ReactNode }) {
             </div>
           </Link>
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <Link href="/time/help" title={t("navHelp")} aria-label={t("navHelp")} className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 hover:text-white">
+              <CircleHelp size={20} aria-hidden />
+            </Link>
             <LangSwitch className="hidden sm:inline-flex" />
             <span className="hidden rounded-full border border-teal-400/25 bg-teal-400/10 px-2.5 py-1 text-[11px] font-medium tracking-wide text-teal-200/95 md:inline">
               {t("flupyTimeChip")}
