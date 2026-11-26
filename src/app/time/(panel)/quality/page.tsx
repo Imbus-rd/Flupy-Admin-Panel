@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/AuthProvider";
 import { apiFetch, ApiError } from "@/lib/api";
 import { CalendarDateField } from "@/components/CalendarDateField";
 import { QualityLightbox, type LightboxPhoto } from "@/components/QualityLightbox";
+import { QualityErrorCatalogAdmin } from "@/components/QualityErrorCatalogAdmin";
 import { WifiAdvisoryReviewDialog, type WifiAdvisoryDetail } from "@/components/WifiAdvisoryReviewDialog";
 import { WifiAdvisoryConfigPanel } from "@/components/WifiAdvisoryConfigPanel";
 import { formatReportingDateTime } from "@/lib/timezone";
@@ -421,6 +422,7 @@ export default function QualityPage() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          {authEmployee?.role === "ADMIN" && token && <QualityErrorCatalogAdmin token={token}/>}
           <button
             type="button"
             onClick={() => void exportWifiExcel()}

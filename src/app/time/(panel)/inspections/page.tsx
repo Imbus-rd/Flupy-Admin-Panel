@@ -9,6 +9,7 @@ import { InspectionPhotoReview } from "@/components/InspectionPhotoReview";
 import { inspectionPhotoReview, inspectionPhotoTitle, inspectionFindingCount, type InspectionReviewPhoto } from "@/lib/inspectionPhotoReview";
 import { OnlineInspectionTargets } from "@/components/OnlineInspectionTargets";
 import { InspectionToolConfiguration } from "@/components/InspectionToolConfiguration";
+import { QualityErrorCatalogAdmin } from "@/components/QualityErrorCatalogAdmin";
 import { OnlineAccompanimentReview, type AccompanimentReview } from "@/components/OnlineAccompanimentReview";
 import { apiFetch, ApiError, mediaUrl } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
@@ -491,6 +492,7 @@ export default function InspectionsPage() {
       </div>
       <div className="flex flex-wrap gap-2">
         {mode === "ONLINE" && employee?.role === "ADMIN" && token && <InspectionToolConfiguration token={token}/>}
+        {mode === "OFFLINE" && employee?.role === "ADMIN" && token && <QualityErrorCatalogAdmin token={token}/>}
         <button onClick={() => void refresh()} disabled={busy} className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-200 hover:border-teal-400/30 disabled:opacity-40">{busy ? t("loading") : t("inspectionRefresh")}</button>
         <button onClick={() => void exportExcel()} disabled={!rows.length} className="rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-teal-400 disabled:opacity-40">{t("inspectionExport")}</button>
       </div>
