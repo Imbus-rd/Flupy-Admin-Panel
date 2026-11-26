@@ -8,6 +8,8 @@ import { InspectionPhotoLightbox } from "@/components/InspectionPhotoLightbox";
 import { InspectionPhotoReview } from "@/components/InspectionPhotoReview";
 import { inspectionPhotoReview, inspectionPhotoTitle, inspectionFindingCount, type InspectionReviewPhoto } from "@/lib/inspectionPhotoReview";
 import { OnlineInspectionTargets } from "@/components/OnlineInspectionTargets";
+import { InspectionToolConfiguration } from "@/components/InspectionToolConfiguration";
+import { OnlineAccompanimentReview, type AccompanimentReview } from "@/components/OnlineAccompanimentReview";
 import { apiFetch, ApiError, mediaUrl } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { useI18n } from "@/lib/i18n";
@@ -36,6 +38,8 @@ type QualityIndicator = {
 
 type InspectionRow = {
   id: string;
+  accompanimentId?: string;
+  accompanimentReview?: AccompanimentReview | null;
   mode: string;
   status: string;
   employeeStatus: string;
@@ -73,6 +77,7 @@ type InspectionRow = {
 
 type ReportResponse = {
   items: InspectionRow[];
+  accompanimentReviews?: AccompanimentReview[];
   qualityByTechnician: QualityIndicator[];
   qualityBySupervisor: QualityIndicator[];
   qualityByAuditor: QualityIndicator[];
@@ -167,7 +172,7 @@ export default function InspectionsPage() {
     : pathname.endsWith("/validated")
       ? "VALIDATED"
       : "ONLINE";
-  const { token } = useAuth();
+  const { token, employee } = useAuth();
   const { t, locale } = useI18n();
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [rows, setRows] = useState<InspectionRow[]>([]);
@@ -178,6 +183,7 @@ export default function InspectionsPage() {
   const [qualityByTechnician, setQualityByTechnician] = useState<QualityIndicator[]>([]);
   const [qualityBySupervisor, setQualityBySupervisor] = useState<QualityIndicator[]>([]);
   const [qualityByAuditor, setQualityByAuditor] = useState<QualityIndicator[]>([]);
+  const [accompanimentReviews,setAccompanimentReviews]=useState<AccompanimentReview[]>([]);
   const [options, setOptions] = useState<Options>(emptyOptions);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -208,6 +214,7 @@ export default function InspectionsPage() {
       setQualityByTechnician(data.qualityByTechnician || []);
       setQualityBySupervisor(data.qualityBySupervisor || []);
       setQualityByAuditor(data.qualityByAuditor || []);
+      setAccompanimentReviews(data.accompanimentReviews || []);
       setTruncated(Boolean(data.truncated));
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : t("errorLoad"));
@@ -254,6 +261,11 @@ export default function InspectionsPage() {
       { header: t("employeesRegion"), key: "region", width: 18 },
       { header: t("inspectionProfile"), key: "profile", width: 34 },
       { header: t("status"), key: "status", width: 18 },
+      ...(mode === "ONLINE" ? [
+        { header: "Acompañamiento", key: "accompaniment", width: 40 },
+        { header: "Evaluación administrativa", key: "review", width: 25 },
+        { header: "Comentario de evaluación", key: "reviewComment", width: 55 }
+      ] : []),
       { header: t("inspectionAverage"), key: "average", width: 15 },
       { header: t("inspectionFindings"), key: "findings", width: 16 },
       { header: t("inspectionMissingTools"), key: "missingTools", width: 18 },
@@ -277,6 +289,9 @@ export default function InspectionsPage() {
       region: row.region,
       profile: row.profileName,
       status: t(`inspectionStatus${row.status}`),
+      accompaniment: row.accompanimentId || row.id,
+      review: row.accompanimentReview?.decision === "ERROR" ? "Error crítico" : row.accompanimentReview?.decision || "Pendiente",
+      reviewComment: row.accompanimentReview?.comment || "",
       average: row.averageRating ?? "",
       findings: inspectionFindingCount(row),
       missingTools: row.missingTools,
@@ -293,7 +308,18 @@ export default function InspectionsPage() {
     sheet.getRow(1).font = { bold: true };
     sheet.getRow(1).height = 28;
     sheet.views = [{ state: "frozen", ySplit: 1 }];
-    sheet.autoFilter = { from: "A1", to: `${String.fromCharCode(64 + sheet.columnCount)}${Math.max(1, rows.length + 1)}` };
+    sheet.autoFilter = { from: "A1", to: `${sheet.getColumn(sheet.columnCount).letter}${Math.max(1, rows.length + 1)}` };
+    if(mode === "ONLINE") {
+      const sampleSheet=workbook.addWorksheet("Acompañamientos");
+      sampleSheet.columns=[{header:"Acompañamiento",key:"id",width:40},{header:"Auditor",key:"auditor",width:35},{header:"Tarjeta",key:"card",width:18},{header:"Resultado",key:"decision",width:22},{header:"Comentario",key:"comment",width:55},{header:"Calidad",key:"quality",width:16}];
+      accompanimentReviews.forEach(r=>sampleSheet.addRow({id:r.accompanimentId,auditor:r.auditorName,card:r.auditorCard,decision:r.decision==="ERROR"?"Error crítico":r.decision||"Pendiente",comment:r.comment||"",quality:r.compliancePercent==null?"Sin muestra":r.compliancePercent/100}));
+      sampleSheet.getColumn("quality").numFmt="0.00%";
+      const auditSheet=workbook.addWorksheet("Calidad por auditor");
+      auditSheet.columns=[{header:"Auditor",key:"name",width:35},{header:"Tarjeta",key:"card",width:18},{header:"OK",key:"ok",width:14},{header:"Críticas",key:"critical",width:14},{header:"Evaluadas",key:"total",width:16},{header:"Calidad",key:"quality",width:16}];
+      qualityByAuditor.forEach(r=>auditSheet.addRow({name:r.name,card:r.card,ok:r.okSamples,critical:r.criticalSamples,total:r.evaluatedSamples,quality:r.compliancePercent==null?"Sin muestra":r.compliancePercent/100}));
+      auditSheet.getColumn("quality").numFmt="0.00%";
+      for(const s of [sampleSheet,auditSheet]){s.getRow(1).font={bold:true};s.views=[{state:"frozen",ySplit:1}];}
+    }
     if (mode === "OFFLINE") {
       const addQualitySheet = (name: string, values: QualityIndicator[]) => {
         const qualitySheet = workbook.addWorksheet(name);
@@ -463,7 +489,8 @@ export default function InspectionsPage() {
         <h1 className="text-2xl font-bold text-white">{modeTitle}</h1>
         <p className="mt-1 text-sm text-slate-400">{modeSubtitle}</p>
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        {mode === "ONLINE" && employee?.role === "ADMIN" && token && <InspectionToolConfiguration token={token}/>}
         <button onClick={() => void refresh()} disabled={busy} className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-200 hover:border-teal-400/30 disabled:opacity-40">{busy ? t("loading") : t("inspectionRefresh")}</button>
         <button onClick={() => void exportExcel()} disabled={!rows.length} className="rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-teal-400 disabled:opacity-40">{t("inspectionExport")}</button>
       </div>
@@ -474,6 +501,12 @@ export default function InspectionsPage() {
     </section>
 
     {mode === "ONLINE" && <OnlineInspectionTargets refreshKey={targetsRefresh} />}
+    {mode === "ONLINE" && <section className="border-y border-white/10 py-5">
+      <h2 className="text-lg font-semibold">Calidad de acompañamientos por auditor</h2>
+      <div className="my-4 flex flex-wrap gap-6 text-sm"><span>OK: {summary.okSamples}</span><span>Críticas: {summary.criticalSamples}</span><span>Evaluadas: {summary.evaluatedSamples}</span><strong className={(summary.compliancePercent??100)<96?"text-rose-300":"text-teal-200"}>{summary.compliancePercent==null?"Sin muestra":`${summary.compliancePercent.toFixed(2)}%`}</strong></div>
+      <p className="mb-3 text-xs text-slate-400">Una muestra por acompañamiento. Calidad = (OK × 100 + críticas × 30) / evaluadas.</p>
+      <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-xs text-slate-400"><tr>{["Auditor","Tarjeta","OK","Críticas","Evaluadas","Calidad"].map(c=><th className="p-3" key={c}>{c}</th>)}</tr></thead><tbody>{qualityByAuditor.map(r=><tr key={r.id} className="border-t border-white/10"><td className="p-3">{r.name}</td><td className="p-3">{r.card}</td><td className="p-3">{r.okSamples}</td><td className="p-3">{r.criticalSamples}</td><td className="p-3">{r.evaluatedSamples}</td><td className={`p-3 ${(r.compliancePercent??100)<96?"text-rose-300":"text-teal-200"}`}>{r.compliancePercent==null?"Sin muestra":`${r.compliancePercent.toFixed(2)}%`}</td></tr>)}</tbody></table></div>
+    </section>}
 
     {mode === "OFFLINE" && <>
       <section className="ui-card p-5">
@@ -533,7 +566,7 @@ export default function InspectionsPage() {
               <td className="px-3 py-3"><div>{row.auditorName}</div><div className="text-xs text-slate-500">{row.auditorCard}</div></td>
               <td className="px-3 py-3">{row.region}</td>
               <td className="min-w-56 px-3 py-3">{row.profileName}</td>
-              <td className="px-3 py-3"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs ${statusTone(row.status)}`}>{t(`inspectionStatus${row.status}`)}</span></td>
+              <td className="px-3 py-3"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs ${statusTone(row.status)}`}>{t(`inspectionStatus${row.status}`)}</span>{mode==="ONLINE"&&<p className={`mt-2 text-xs ${row.accompanimentReview?.decision==="ERROR"?"text-rose-300":"text-slate-300"}`}>{row.accompanimentReview?.decision==="ERROR"?"Error crítico":row.accompanimentReview?.decision||"Sin evaluar"}</p>}</td>
               <td className="px-3 py-3 font-semibold">{row.averageRating == null ? "—" : `${row.averageRating}/5`}</td>
               <td className="px-3 py-3">{inspectionFindingCount(row) ? <span className="text-rose-300">{inspectionFindingCount(row)}</span> : <span className="text-teal-300">0</span>}</td>
               <td className="px-3 py-3"><button onClick={() => void openDetail(row.id)} disabled={detailBusy} className="whitespace-nowrap text-teal-300 hover:text-teal-200">{t("inspectionView")}</button></td>
@@ -555,6 +588,7 @@ export default function InspectionsPage() {
           [t("inspectionCoordinates"), detail.inspection.latitude != null && detail.inspection.longitude != null ? `${detail.inspection.latitude}, ${detail.inspection.longitude}` : "—"]
         ].map(([label, value]) => <div key={label} className="rounded-lg border border-white/[0.08] bg-[#0b111b] p-3"><p className="text-xs uppercase text-slate-500">{label}</p><p className="mt-1 text-sm text-slate-100">{value}</p></div>)}</div>
         {detail.inspection.mode === "ONLINE" && <p className={`mt-4 border-y border-white/10 py-3 text-sm ${detail.inspection.orderLocation?.status === "MATCH" ? "text-teal-200" : "text-amber-200"}`}>{locale === "es" ? "Proximidad OT (100 m): " : "Order proximity (100 m): "}{inspectionLocationLabel(detail.inspection.orderLocation, locale)}</p>}
+        {detail.inspection.mode === "ONLINE" && token && <OnlineAccompanimentReview id={detail.inspection.id} token={token} editable={employee?.role==="ADMIN"} onSaved={()=>void load(filters)}/>}
         <h3 className="mt-6 text-base font-semibold">{t("inspectionGroupResults")}</h3>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{detail.groups.map((group) => <div key={group.id} className="rounded-lg border border-white/[0.08] bg-[#0b111b] p-4"><div className="flex items-center justify-between"><p className="font-medium">{t(`inspectionGroup${group.groupKey}`)}</p><span className="text-lg font-bold text-teal-300">{group.rating}/5</span></div><p className="mt-2 text-sm text-slate-400">{group.comment || t("inspectionNoComment")}</p><div className="mt-3 space-y-1 text-xs text-slate-500">{group.answers.map((answer) => <div key={answer.criterionKey} className="flex justify-between gap-3"><span>{t(`inspectionCriterion${answer.criterionKey}`)}</span><span className="text-right text-slate-300">{formatAnswer(answer)}</span></div>)}</div></div>)}</div>
         {!!detail.tools.length && <><h3 className="mt-6 text-base font-semibold">{t("inspectionTools")}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{detail.tools.map((tool) => <div key={tool.toolId} className={`rounded-lg border bg-[#0b111b] px-3 py-2 text-sm ${tool.hasTool ? "border-teal-400/20 text-teal-200" : "border-rose-400/20 text-rose-200"}`}>{tool.toolName}: {tool.hasTool ? t("yes") : t("no")}</div>)}</div></>}
